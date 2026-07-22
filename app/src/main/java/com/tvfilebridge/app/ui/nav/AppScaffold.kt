@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
@@ -175,25 +176,69 @@ fun AppScaffold(container: AppContainer) {
                         },
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
-                    var isCapturingScreenshot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-                    var screenshotMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-                    NavigationDrawerItem(
-                        label = { Text(screenshotMessage ?: if (isCapturingScreenshot) "Capturing…" else "Screenshot TV") },
-                        icon = { Icon(Icons.Filled.PhotoCamera, contentDescription = null) },
-                        selected = false,
-                        onClick = {
-                            isCapturingScreenshot = true
-                            screenshotMessage = null
-                            drawerScope.launch {
-                                container.tvScreenshotSaver.captureAndSave()
-                                    .onSuccess { screenshotMessage = "Screenshot saved" }
-                                    .onFailure { screenshotMessage = it.message ?: "Screenshot failed" }
-                                kotlinx.coroutines.delay(2000)
-                                screenshotMessage = null
-                                isCapturingScreenshot = false
+                }
+
+                // Not gated on activeDevice like Wake TV/Fix cursor above -
+                // the PC option here has nothing to do with TV connection
+                // state, only the TV option (disabled below when there's no
+                // active TV) does.
+                var isCapturingScreenshot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                var screenshotMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+                var showScreenshotPicker by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+                fun runScreenshot(action: suspend () -> Result<*>) {
+                    isCapturingScreenshot = true
+                    screenshotMessage = null
+                    drawerScope.launch {
+                        action()
+                            .onSuccess { screenshotMessage = "Screenshot saved" }
+                            .onFailure { screenshotMessage = it.message ?: "Screenshot failed" }
+                        kotlinx.coroutines.delay(2000)
+                        screenshotMessage = null
+                        isCapturingScreenshot = false
+                    }
+                }
+
+                NavigationDrawerItem(
+                    label = { Text(screenshotMessage ?: if (isCapturingScreenshot) "Capturing…" else "Screenshot") },
+                    icon = { Icon(Icons.Filled.PhotoCamera, contentDescription = null) },
+                    selected = false,
+                    onClick = { showScreenshotPicker = true },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                if (showScreenshotPicker) {
+                    val pcDevices by container.pcDeviceStore.devices.collectAsState(initial = emptyList())
+                    val primaryPc = pcDevices.find { it.isPrimary }
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showScreenshotPicker = false },
+                        title = { Text("Screenshot from") },
+                        text = {
+                            Column {
+                                Text(
+                                    if (activeDevice != null) "TV" else "TV (not connected)",
+                                    color = if (activeDevice != null) androidx.compose.ui.graphics.Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable(enabled = activeDevice != null) {
+                                            showScreenshotPicker = false
+                                            runScreenshot { container.tvScreenshotSaver.captureAndSave() }
+                                        }
+                                        .padding(vertical = 12.dp),
+                                )
+                                Text(
+                                    if (primaryPc != null) "PC (${primaryPc.name})" else "PC (no primary PC set up)",
+                                    color = if (primaryPc != null) androidx.compose.ui.graphics.Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable(enabled = primaryPc != null) {
+                                            showScreenshotPicker = false
+                                            runScreenshot { container.pcScreenshotRequester.requestAndSave(primaryPc!!) }
+                                        }
+                                        .padding(vertical = 12.dp),
+                                )
                             }
                         },
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = { showScreenshotPicker = false }) { Text("Cancel") }
+                        },
                     )
                 }
                 androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))

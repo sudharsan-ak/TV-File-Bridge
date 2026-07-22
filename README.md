@@ -41,6 +41,6 @@ Companion suite bridging an Android phone, Windows PC, and Android TV over ADB. 
 | File sync (PC) | PC→phone file push (Explorer copy → auto-send) |
 | Online/Offline toggle | Manually suspend the app's ADB connection so other tools (e.g. scrcpy) can use the TV |
 | Wake-on-LAN | Wakes the TV from standby via Sony's IRCC-IP protocol |
-| Screenshot | Captures the TV's current screen, saves into the configured PC-sync folder |
+| Screenshot | Captures the TV's or PC's current screen (your choice), saves into the configured sync folder |
 | Fix cursor | Re-enables the TV companion's accessibility service on demand |
 | Accessibility Watchdog | Standalone TV app: auto re-enables chosen accessibility services on boot, screen wake, and every ~4 hours |

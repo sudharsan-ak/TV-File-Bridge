@@ -157,6 +157,20 @@ public class ClipboardServer
                     Console.WriteLine($"[ClipboardServer] existing device name is now '{device.DeviceName}'");
                 }
 
+                if (header.Type == "screenshot_request")
+                {
+                    // A genuinely different shape from every other push type
+                    // here: phone asks, PC replies with binary image data
+                    // instead of the usual "ok"/"denied" status string - so
+                    // this bypasses ProcessPush (which only ever handles
+                    // fire-and-forget pushes FROM the phone) and writes its
+                    // own response directly.
+                    await HandleScreenshotRequest(stream, token);
+                    Console.WriteLine("[ClipboardServer] screenshot request handled");
+                    await Task.Delay(300, token);
+                    return;
+                }
+
                 await ProcessPush(header, remoteIp, stream, token);
                 await WriteResponseAsync(stream, "ok", token);
                 Console.WriteLine("[ClipboardServer] push handled successfully");
@@ -442,5 +456,47 @@ public class ClipboardServer
         var lengthBytes = BitConverter.GetBytes(bytes.Length);
         await stream.WriteAsync(lengthBytes, token);
         await stream.WriteAsync(bytes, token);
+    }
+
+    /// <summary>
+    /// Captures the primary display and sends it back on the same
+    /// connection: status string (length-prefixed, same framing as every
+    /// other response here), then - only when status is "ok" - a 4-byte
+    /// image length followed by the raw PNG bytes. Primary display only
+    /// (not the full virtual desktop spanning every monitor), matching a
+    /// single-screen capture the same way the TV's own screenshot feature
+    /// works.
+    /// </summary>
+    private async Task HandleScreenshotRequest(NetworkStream stream, CancellationToken token)
+    {
+        byte[]? pngBytes;
+        try
+        {
+            pngBytes = CapturePrimaryScreenPng();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClipboardServer] screenshot capture failed: {ex.Message}");
+            await WriteResponseAsync(stream, $"error: {ex.Message}", token);
+            return;
+        }
+
+        await WriteResponseAsync(stream, "ok", token);
+        var lengthBytes = BitConverter.GetBytes(pngBytes.Length);
+        await stream.WriteAsync(lengthBytes, token);
+        await stream.WriteAsync(pngBytes, token);
+    }
+
+    private static byte[] CapturePrimaryScreenPng()
+    {
+        var bounds = System.Windows.Forms.Screen.PrimaryScreen!.Bounds;
+        using var bitmap = new System.Drawing.Bitmap(bounds.Width, bounds.Height);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size);
+        }
+        using var memoryStream = new MemoryStream();
+        bitmap.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Png);
+        return memoryStream.ToArray();
     }
 }
