@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.TvFileBridge" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
+
+    <!-- For share-target / process-text activities: the push to PC is a real
+         network round-trip, so this activity stays alive and on top for that
+         whole duration before finish() - previous attempts using a plain
+         transparent color background still had Samsung/Android paint a solid
+         black backdrop for that window during the wait. Theme.Translucent is
+         AOSP's own answer for "activity that does background work with no
+         visible window": it makes the window itself genuinely pass through
+         to whatever's beneath for its entire lifetime, not just the instant
+         around launch. -->
+    <style name="Theme.TvFileBridge.Transparent" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="s">@android:color/transparent</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
+</resources>

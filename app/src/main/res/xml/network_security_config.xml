@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Allows plain HTTP app-wide. This app only ever talks to devices on the
+    user's own LAN (ADB, the TV's IRCC-IP wake endpoint) - both are
+    unencrypted local-network protocols with no TLS option, and Android's
+    network-security-config domain-config doesn't support CIDR ranges, so a
+    per-IP allowlist isn't practical for a TV whose IP can change.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

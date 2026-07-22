@@ -1,0 +1,298 @@
+<title>Remote Tab — ADB Mouse Wheel</title>
+<style>
+  :root {
+    --bg: #0b1615;
+    --surface: #122321;
+    --card: #16302c;
+    --teal: #37c6b0;
+    --teal-light: #5be8d0;
+    --text: #eef7f4;
+    --muted: #8fb3ac;
+    --hairline: #22403b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 32px 20px 100px;
+  }
+  h1 { font-size: 1.3rem; font-weight: 700; text-align: center; margin: 0 0 6px; }
+  .sub {
+    text-align: center; color: var(--muted); font-size: 0.85rem;
+    margin: 0 0 36px; max-width: 640px; margin-left: auto; margin-right: auto; line-height: 1.5;
+  }
+  .options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px; max-width: 780px; margin: 0 auto; }
+  @media (max-width: 700px) { .options { grid-template-columns: 1fr; max-width: 380px; } }
+
+  .col { display: flex; flex-direction: column; }
+  .label { text-align: center; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.03em; color: var(--teal-light); text-transform: uppercase; margin-bottom: 4px; }
+  .desc { text-align: center; font-size: 0.72rem; color: var(--muted); margin-bottom: 16px; min-height: 44px; line-height: 1.4; }
+
+  .frame {
+    background: var(--surface);
+    border-radius: 28px;
+    border: 1px solid var(--hairline);
+    overflow: hidden;
+    box-shadow: 0 18px 46px rgba(0,0,0,0.45);
+    position: relative;
+  }
+  .statusbar { height: 26px; display: flex; align-items: center; justify-content: center; font-size: 0.62rem; color: var(--muted); }
+  .header { padding: 2px 18px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .header-title { font-size: 1rem; font-weight: 700; }
+  .conn-chip { display: flex; align-items: center; gap: 5px; font-size: 0.62rem; color: var(--teal-light); background: var(--card); padding: 4px 9px; border-radius: 999px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--teal-light); }
+
+  .body { padding: 2px 18px 22px; display: flex; flex-direction: column; align-items: center; position: relative; }
+
+  .touchpad {
+    width: 100%; height: 150px; border-radius: 15px; background: var(--card);
+    display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px;
+    margin-bottom: 14px; position: relative;
+  }
+  .touchpad svg { opacity: 0.22; }
+  .touchpad .tp-text { font-size: 0.65rem; color: var(--muted); opacity: 0.6; }
+
+  .back-pill {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    margin: 0 auto 20px; width: fit-content; padding: 7px 15px; border-radius: 999px;
+    background: var(--card); color: var(--muted); font-size: 0.7rem; font-weight: 600;
+  }
+
+  /* D-pad restored to full "clean" style like the old dedicated tab */
+  .side-col { display: flex; flex-direction: column; gap: 10px; }
+  .side-btn {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--card); color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .side-btn.mute { color: var(--teal-light); background: var(--surface); border: 1px solid var(--hairline); }
+
+  .dpad-row { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 14px; }
+  .dpad {
+    width: 168px; height: 168px; border-radius: 50%; background: var(--card); position: relative; flex-shrink: 0;
+  }
+  .dpad .arrow { position: absolute; color: var(--muted); display: flex; align-items: center; justify-content: center; }
+  .dpad .arrow.up { top: 10px; left: 50%; transform: translateX(-50%); }
+  .dpad .arrow.down { bottom: 10px; left: 50%; transform: translateX(-50%); }
+  .dpad .arrow.left { left: 10px; top: 50%; transform: translateY(-50%); }
+  .dpad .arrow.right { right: 10px; top: 50%; transform: translateY(-50%); }
+  .dpad .center-ok {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 56px; height: 56px; border-radius: 50%; background: var(--teal); color: var(--bg);
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.7rem;
+  }
+
+  .transport-row { display: flex; gap: 12px; margin-top: 2px; }
+  .tbtn {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--card); color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .fab {
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+  }
+  .fab.primary { background: var(--teal); color: var(--bg); }
+  .fab.secondary { background: var(--card); color: var(--teal-light); border: 1.5px solid var(--hairline); }
+
+  /* Floating popover: no panel background at all - just the wheel + close
+     button floating directly over the page, everything else stays visible
+     and usable underneath. Only closes via the explicit × (tap-outside no
+     longer dismisses it, per the "use both at once" requirement). */
+  .popover {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 10;
+  }
+  .popover-close {
+    position: absolute;
+    top: -8px; right: -8px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--card);
+    border: 1.5px solid var(--hairline);
+    color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  }
+  /* ADB Mouse-style nudge pad: four separate annular buttons around a
+     matching solid center disc. SVG is used instead of a conic-gradient so
+     the inner/outer curves, diagonal cuts, spacing, and arrow positions are
+     exact and stay clean at every size. */
+  .adb-wheel {
+    width: 148px;
+    height: 148px;
+    position: relative;
+    filter: drop-shadow(0 10px 22px rgba(0,0,0,0.52));
+  }
+  .adb-wheel svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    opacity: 1;
+  }
+  .adb-segment, .adb-center {
+    fill: var(--teal);
+    stroke: var(--bg);
+    stroke-width: 3.5;
+    stroke-linejoin: round;
+    transition: fill 120ms ease, transform 120ms ease, filter 120ms ease;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .adb-segment:hover, .adb-center:hover {
+    fill: var(--teal-light);
+    filter: brightness(1.05);
+  }
+  .adb-segment:active, .adb-center:active {
+    transform: scale(0.97);
+  }
+  .adb-center {
+    stroke-width: 6;
+  }
+  .adb-arrow {
+    fill: var(--bg);
+    pointer-events: none;
+  }
+
+  .dim-note { text-align: center; font-size: 0.6rem; color: var(--muted); margin-top: 8px; opacity: 0.7; }
+
+  svg { display: block; }
+</style>
+
+<h1>Remote Tab — ADB Mouse Wheel</h1>
+<p class="sub">Touchpad + Back on top, then the full-size D-pad (matching the old dedicated tab's clean style) with Home/Power left, Volume right, transport row below. Popovers are true floating panels anchored to their FAB, not a full-screen modal — background stays visible, small × closes them.</p>
+
+<div class="options">
+
+  <!-- Default state, corrected order + D-pad style -->
+  <div class="col">
+    <div class="label">Default</div>
+    <div class="desc">Touchpad first, D-pad restored to its original larger/cleaner circular style below it</div>
+    <div class="frame">
+      <div class="statusbar">9:41</div>
+      <div class="header"><div class="header-title">Remote</div><div class="conn-chip"><span class="dot"></span>Connected</div></div>
+      <div class="body">
+        <div class="touchpad">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#eef7f4" stroke-width="2"><path d="M8 3a2 2 0 0 1 4 0v2m0 0V3a2 2 0 0 1 4 0v4m-4-4v9m4-9a2 2 0 0 1 4 0v5m-4-5v3m4 2v3a6 6 0 0 1-6 6H9a6 6 0 0 1-5-2.7L2.7 15A2 2 0 0 1 5 12h.5m2.5-9v9"/></svg>
+          <div class="tp-text">Drag to move · tap to click</div>
+          <div class="fab primary" style="position:absolute; right:10px; bottom:10px; width:42px; height:42px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 4h6v6M4 9V4h5M4 15v5h5M20 15v5h-6M9 4L4 9M20 9l-5-5M4 15l5 5M15 20l5-5"/></svg>
+          </div>
+        </div>
+        <div class="back-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back</div>
+
+        <div class="dpad-row">
+          <div class="side-col">
+            <div class="side-btn" title="Home"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg></div>
+            <div class="side-btn" title="Power"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v9M18.4 6.6a9 9 0 1 1-12.8 0"/></svg></div>
+          </div>
+          <div class="dpad">
+            <div class="arrow up"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 15l6-6 6 6"/></svg></div>
+            <div class="arrow down"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></div>
+            <div class="arrow left"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 6l-6 6 6 6"/></svg></div>
+            <div class="arrow right"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="center-ok">OK</div>
+          </div>
+          <div class="side-col">
+            <div class="side-btn" title="Volume down"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg></div>
+            <div class="side-btn mute" title="Mute"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6"/></svg></div>
+            <div class="side-btn" title="Volume up"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg></div>
+          </div>
+        </div>
+
+        <div class="transport-row">
+          <div class="tbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18V6l-8.5 6zM20 18V6l-8.5 6z"/></svg></div>
+          <div class="tbtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="tbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 6v12l8.5-6zM4 6v12l8.5-6z"/></svg></div>
+        </div>
+
+        <div class="fab secondary" style="position:absolute; right:16px; top:170px; width:42px; height:42px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+        </div>
+        <div class="fab secondary" style="position:absolute; left:16px; top:170px; width:42px; height:42px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move-cursor: FAB morphs into the wheel in-place, not a separate popover next to an unchanged FAB -->
+  <div class="col">
+    <div class="label">FAB tapped → grows into wheel, same spot</div>
+    <div class="desc">The button itself expands into an ADB Mouse-style four-segment nudge pad, centered on the original FAB position — no duplicate button or generic radial dial. Tapping × shrinks it back down to just the small FAB again.</div>
+    <div class="frame">
+      <div class="statusbar">9:41</div>
+      <div class="header"><div class="header-title">Remote</div><div class="conn-chip"><span class="dot"></span>Connected</div></div>
+      <div class="body">
+        <div class="touchpad">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#eef7f4" stroke-width="2"><path d="M8 3a2 2 0 0 1 4 0v2m0 0V3a2 2 0 0 1 4 0v4m-4-4v9m4-9a2 2 0 0 1 4 0v5m-4-5v3m4 2v3a6 6 0 0 1-6 6H9a6 6 0 0 1-5-2.7L2.7 15A2 2 0 0 1 5 12h.5m2.5-9v9"/></svg>
+          <div class="tp-text">Drag to move · tap to click</div>
+
+          <!-- wheel's center lines up with where the FAB's center (right:10px+21px, bottom:10px+21px) used to be -->
+          <div class="popover" style="right:-22px; bottom:-22px;">
+            <div class="popover-close">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </div>
+            <div class="adb-wheel" role="group" aria-label="Cursor nudge control">
+              <svg viewBox="0 0 148 148" aria-hidden="true">
+                <!-- Four curved ADB Mouse-style directional segments -->
+                <path class="adb-segment" d="M 32.46 22.71 A 66 66 0 0 1 115.54 22.71 L 96.66 46.02 A 36 36 0 0 0 51.34 46.02 Z"/>
+                <path class="adb-segment" d="M 125.29 32.46 A 66 66 0 0 1 125.29 115.54 L 101.98 96.66 A 36 36 0 0 0 101.98 51.34 Z"/>
+                <path class="adb-segment" d="M 115.54 125.29 A 66 66 0 0 1 32.46 125.29 L 51.34 101.98 A 36 36 0 0 0 96.66 101.98 Z"/>
+                <path class="adb-segment" d="M 22.71 115.54 A 66 66 0 0 1 22.71 32.46 L 46.02 51.34 A 36 36 0 0 0 46.02 96.66 Z"/>
+
+                <!-- Solid center disc, matching the ADB Mouse reference -->
+                <circle class="adb-center" cx="74" cy="74" r="31"/>
+
+                <!-- Filled triangular arrows, not thin chevrons -->
+                <path class="adb-arrow" d="M74 17 L66 31 H82 Z"/>
+                <path class="adb-arrow" d="M131 74 L117 66 V82 Z"/>
+                <path class="adb-arrow" d="M74 131 L66 117 H82 Z"/>
+                <path class="adb-arrow" d="M17 74 L31 66 V82 Z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="back-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back</div>
+
+        <div class="dpad-row" style="opacity:0.9;">
+          <div class="side-col">
+            <div class="side-btn" title="Home"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg></div>
+            <div class="side-btn" title="Power"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v9M18.4 6.6a9 9 0 1 1-12.8 0"/></svg></div>
+          </div>
+          <div class="dpad">
+            <div class="arrow up"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 15l6-6 6 6"/></svg></div>
+            <div class="arrow down"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></div>
+            <div class="arrow left"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 6l-6 6 6 6"/></svg></div>
+            <div class="arrow right"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="center-ok">OK</div>
+          </div>
+          <div class="side-col">
+            <div class="side-btn" title="Volume down"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg></div>
+            <div class="side-btn mute" title="Mute"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6"/></svg></div>
+            <div class="side-btn" title="Volume up"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg></div>
+          </div>
+        </div>
+
+        <div class="transport-row">
+          <div class="tbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18V6l-8.5 6zM20 18V6l-8.5 6z"/></svg></div>
+          <div class="tbtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="tbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 6v12l8.5-6zM4 6v12l8.5-6z"/></svg></div>
+        </div>
+
+        <div class="fab secondary" style="position:absolute; right:16px; top:170px; width:42px; height:42px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+        </div>
+        <div class="fab secondary" style="position:absolute; left:16px; top:170px; width:42px; height:42px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="dim-note">Everything else (D-pad, transport buttons) stays fully visible and tappable behind the popover</div>
+  </div>
+
+</div>

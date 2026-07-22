@@ -1,0 +1,12 @@
+<Window x:Class="PcCompanion.ImagePreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Image preview"
+        Background="#0B1615"
+        WindowStartupLocation="CenterScreen"
+        SizeToContent="WidthAndHeight"
+        MaxWidth="1000" MaxHeight="800">
+    <Grid Margin="12">
+        <Image x:Name="PreviewImage" Stretch="Uniform" MaxWidth="960" MaxHeight="760"/>
+    </Grid>
+</Window>

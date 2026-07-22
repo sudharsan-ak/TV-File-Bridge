@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">#0B1615</color>
+    <color name="icon_ring_teal_light">#5BE8D0</color>
+    <color name="icon_ring_teal">#37C6B0</color>
+    <color name="icon_ring_amber">#F0A94E</color>
+    <color name="icon_bg_top">#0F2B27</color>
+    <color name="icon_bg_bottom">#040B0A</color>
+</resources>

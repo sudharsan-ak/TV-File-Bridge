@@ -1,0 +1,31 @@
+# Android / Gradle
+.gradle/
+build/
+*/build/
+local.properties
+.cxx/
+captures/
+.externalNativeBuild/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.navigation/
+libs/
+
+# .NET / Visual Studio (pc-companion)
+bin/
+obj/
+*.user
+.vs/
+
+# Keystores - never commit signing material
+*.jks
+*.keystore
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
