@@ -2,13 +2,18 @@
 
 Companion suite bridging an Android phone, Windows PC, and Android TV over ADB. See [BUILD_SPEC.md](BUILD_SPEC.md) for architecture, decisions, and gotchas.
 
-## PC App:
+## Screenshots
 
-<img width="778" height="835" alt="image" src="https://github.com/user-attachments/assets/6b9db4c2-6853-4b52-b621-83c6f9c8afef" />
-
-## Android App:
-
-<img width="1077" height="2269" alt="image" src="https://github.com/user-attachments/assets/ebebe8e1-d440-440c-8ad2-59108d5016bf" />
+<table>
+<tr>
+<th>PC App</th>
+<th>Android App</th>
+</tr>
+<tr>
+<td><img height="500" alt="PC companion app" src="https://github.com/user-attachments/assets/6b9db4c2-6853-4b52-b621-83c6f9c8afef" /></td>
+<td><img height="500" alt="Android phone app" src="https://github.com/user-attachments/assets/ebebe8e1-d440-440c-8ad2-59108d5016bf" /></td>
+</tr>
+</table>
 
 
 
