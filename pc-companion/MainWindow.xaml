@@ -229,6 +229,7 @@
             <RadioButton x:Name="NavDevices" Content="Devices" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
             <RadioButton x:Name="NavTransfers" Content="Transfers" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
             <RadioButton x:Name="NavTvFiles" Content="TV Files" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4" Checked="OnNavTvFilesChecked"/>
+            <RadioButton x:Name="NavScreenView" Content="Screen View" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4" Checked="OnNavScreenViewChecked"/>
             <RadioButton x:Name="NavHistory" Content="History" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
             <RadioButton x:Name="NavSettings" Content="Settings" Style="{StaticResource NavItem}" GroupName="Nav"/>
         </StackPanel>
@@ -255,6 +256,12 @@
                 <StackPanel>
                     <TextBlock Text="TV Files" FontWeight="Bold"/>
                     <TextBlock Text="Browse and download files straight from your TV over ADB." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="Screen View" FontWeight="Bold"/>
+                    <TextBlock Text="Mirror a TV's screen on this PC." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
             <Border Style="{StaticResource CardBorder}">
@@ -559,6 +566,74 @@
                     </ItemsControl>
                 </ScrollViewer>
             </Grid>
+        </DockPanel>
+
+        <DockPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavScreenView, Converter={StaticResource BoolVisibility}}">
+            <TextBlock DockPanel.Dock="Top" Text="Screen View" FontWeight="Bold" FontSize="14" Margin="0,0,0,4"/>
+            <TextBlock DockPanel.Dock="Top" Text="Mirror a TV or phone's screen on this PC, same as the old scrcpy shortcut - opens in its own window."
+                       Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,16"/>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding ScreenViewError}" Foreground="#FF6B5E" FontSize="12"
+                       TextWrapping="Wrap" Margin="0,0,0,12"
+                       Visibility="{Binding HasScreenViewError, Converter={StaticResource BoolVisibility}}"/>
+            <TabControl Padding="0">
+                <TabItem Header="TV">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+                        <ItemsControl ItemsSource="{Binding SavedTvs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource CardBorder}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}"/>
+                                                <TextBlock Text="{Binding Port, StringFormat='Port {0}'}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <Button Content="Rename" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
+                                                        Click="OnTvSectionRenameClick" Tag="{Binding}"/>
+                                                <Button Content="View screen" Style="{StaticResource FlatButton}"
+                                                        Click="OnScreenViewClick" Tag="{Binding}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="Phone">
+                    <DockPanel Margin="0,12,0,0">
+                        <Button DockPanel.Dock="Top" Content="Refresh" Style="{StaticResource FlatButton}"
+                                HorizontalAlignment="Right" Margin="0,0,0,12" Click="OnRefreshPhoneScreenDevicesClick"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding PhoneScreenDevices}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource CardBorder}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding DisplayName}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                    <Button Content="Rename" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
+                                                            Click="OnRenamePhoneScreenDeviceClick" Tag="{Binding}"/>
+                                                    <Button Content="View screen" Style="{StaticResource FlatButton}"
+                                                            Click="OnPhoneScreenViewClick" Tag="{Binding}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+                </TabItem>
+            </TabControl>
         </DockPanel>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavSettings, Converter={StaticResource BoolVisibility}}">

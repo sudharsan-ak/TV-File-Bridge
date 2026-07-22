@@ -18,7 +18,7 @@ namespace PcCompanion;
 /// </summary>
 public class PushHeader
 {
-    public string Type { get; set; } = ""; // "text", "image", or "file"
+    public string Type { get; set; } = ""; // "text", "image", "file", or one of the pc_* browse-request types
     public string DeviceName { get; set; } = "";
     public string? Text { get; set; }
     public int ImageByteLength { get; set; }
@@ -26,6 +26,12 @@ public class PushHeader
     // long, not int - files aren't capped, so this needs to hold sizes well
     // past int.MaxValue (~2GB) for a large video.
     public long FileByteLength { get; set; }
+
+    // Used by the pc_list_dir/pc_pull_file/pc_push_file/pc_rename/pc_delete
+    // browse-request types below - Path is always a literal absolute Windows
+    // path (or "" for the drive-list level), never relative to some root.
+    public string? Path { get; set; }
+    public string? NewName { get; set; }
 }
 
 public class ClipboardServer
@@ -167,6 +173,19 @@ public class ClipboardServer
                     // own response directly.
                     await HandleScreenshotRequest(stream, token);
                     Console.WriteLine("[ClipboardServer] screenshot request handled");
+                    await Task.Delay(300, token);
+                    return;
+                }
+
+                if (header.Type is "pc_list_dir" or "pc_pull_file" or "pc_push_file" or "pc_rename" or "pc_delete")
+                {
+                    // Phone browsing this PC's own filesystem (mirrors the TV
+                    // Files feature, but no ADB involved) - same "own response
+                    // framing" shape as screenshot_request above, since a
+                    // listing/pull needs to send back more than just a status
+                    // string, and a push needs to read its own inline payload.
+                    await HandlePcFileRequest(header, stream, token);
+                    Console.WriteLine($"[ClipboardServer] {header.Type} handled");
                     await Task.Delay(300, token);
                     return;
                 }
@@ -485,6 +504,90 @@ public class ClipboardServer
         var lengthBytes = BitConverter.GetBytes(pngBytes.Length);
         await stream.WriteAsync(lengthBytes, token);
         await stream.WriteAsync(pngBytes, token);
+    }
+
+    /// <summary>
+    /// Handles the phone's PC-browsing requests (pc_list_dir/pc_pull_file/
+    /// pc_push_file/pc_rename/pc_delete) - filesystem-backed via PcFileServer,
+    /// no ADB. Each branch writes its own response framing after the initial
+    /// status string, same escape-hatch shape as HandleScreenshotRequest.
+    /// </summary>
+    private async Task HandlePcFileRequest(PushHeader header, NetworkStream stream, CancellationToken token)
+    {
+        var path = header.Path ?? "";
+        try
+        {
+            switch (header.Type)
+            {
+                case "pc_list_dir":
+                {
+                    var entries = string.IsNullOrEmpty(path) ? PcFileServer.ListDrives() : PcFileServer.ListDir(path);
+                    // camelCase to match the phone's kotlinx.serialization PcFile
+                    // model (name/path/isDirectory/...) - System.Text.Json
+                    // defaults to PascalCase, which failed strict decoding on
+                    // required fields with a "missing at path $[0]" error.
+                    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+                    var json = JsonSerializer.Serialize(entries, jsonOptions);
+                    await WriteResponseAsync(stream, "ok", token);
+                    var jsonBytes = Encoding.UTF8.GetBytes(json);
+                    await stream.WriteAsync(BitConverter.GetBytes(jsonBytes.Length), token);
+                    await stream.WriteAsync(jsonBytes, token);
+                    break;
+                }
+                case "pc_pull_file":
+                {
+                    if (!File.Exists(path)) { await WriteResponseAsync(stream, "error: File not found", token); break; }
+                    await WriteResponseAsync(stream, "ok", token);
+                    var fileInfo = new FileInfo(path);
+                    await stream.WriteAsync(BitConverter.GetBytes(fileInfo.Length), token);
+                    await using var fileStream = File.OpenRead(path);
+                    await fileStream.CopyToAsync(stream, token);
+                    break;
+                }
+                case "pc_push_file":
+                {
+                    if (string.IsNullOrWhiteSpace(header.FileName) || header.FileByteLength <= 0)
+                    {
+                        await WriteResponseAsync(stream, "error: Missing file name or length", token);
+                        break;
+                    }
+                    var targetPath = System.IO.Path.Combine(path, header.FileName);
+                    var buffer = new byte[64 * 1024];
+                    var remaining = header.FileByteLength;
+                    await using (var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write))
+                    {
+                        while (remaining > 0)
+                        {
+                            var toRead = (int)Math.Min(buffer.Length, remaining);
+                            var read = await stream.ReadAsync(buffer.AsMemory(0, toRead), token);
+                            if (read == 0) throw new IOException("Connection closed before all file bytes arrived");
+                            await fileStream.WriteAsync(buffer.AsMemory(0, read), token);
+                            remaining -= read;
+                        }
+                    }
+                    await WriteResponseAsync(stream, "ok", token);
+                    break;
+                }
+                case "pc_rename":
+                {
+                    if (string.IsNullOrWhiteSpace(header.NewName)) { await WriteResponseAsync(stream, "error: Missing new name", token); break; }
+                    PcFileServer.Rename(path, header.NewName);
+                    await WriteResponseAsync(stream, "ok", token);
+                    break;
+                }
+                case "pc_delete":
+                {
+                    PcFileServer.Delete(path);
+                    await WriteResponseAsync(stream, "ok", token);
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClipboardServer] {header.Type} failed: {ex.Message}");
+            try { await WriteResponseAsync(stream, $"error: {ex.Message}", token); } catch { /* connection may already be dead */ }
+        }
     }
 
     private static byte[] CapturePrimaryScreenPng()

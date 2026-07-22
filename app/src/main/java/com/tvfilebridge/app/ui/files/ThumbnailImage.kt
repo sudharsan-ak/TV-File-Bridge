@@ -23,9 +23,13 @@ import com.tvfilebridge.app.files.RemoteFile
 import java.io.File
 
 private val THUMBNAIL_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")
+private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "webm", "3gp", "mov", "avi")
 
-fun isThumbnailable(entry: RemoteFile): Boolean =
-    !entry.isDirectory && entry.name.substringAfterLast('.', "").lowercase() in THUMBNAIL_EXTENSIONS
+fun isThumbnailable(entry: RemoteFile): Boolean {
+    if (entry.isDirectory) return false
+    val ext = entry.name.substringAfterLast('.', "").lowercase()
+    return ext in THUMBNAIL_EXTENSIONS || ext in VIDEO_EXTENSIONS
+}
 
 @Composable
 fun ThumbnailImage(

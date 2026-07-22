@@ -88,4 +88,11 @@ public class AppSettings
     // TVs this PC has connected to directly over ADB, for the TV Files tab -
     // independent of any phone's own TV connection/pairing.
     public List<SavedTv> SavedTvs { get; set; } = new();
+
+    // User-chosen display names for Screen View's Phone tab, keyed by the
+    // phone's raw ADB model string (e.g. "SM S908U1") - independent of
+    // PairedDevices' clipboard-bridge pairing, since there's no reliable
+    // stable ID linking an ADB serial (USB ID or mDNS string) back to a
+    // paired device's IP-based identity, especially after either is renamed.
+    public Dictionary<string, string> ScreenViewPhoneNames { get; set; } = new();
 }

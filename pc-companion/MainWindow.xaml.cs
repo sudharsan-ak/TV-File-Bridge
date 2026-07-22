@@ -20,6 +20,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     public ObservableCollection<PcTransfer> ReceivedTransfers => App.TransferManager.ReceivedTransfers;
     public ObservableCollection<TvFile> TvFiles { get; } = new();
     public ObservableCollection<SavedTv> SavedTvs { get; } = new();
+    public ObservableCollection<AdbDevice> PhoneScreenDevices { get; } = new();
     public ObservableCollection<TvBreadcrumb> TvBreadcrumbs { get; } = new();
 
     private bool _isTvSelecting;
@@ -36,6 +37,19 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsTvSelecting)));
         }
     }
+
+    private string? _screenViewError;
+    public string? ScreenViewError
+    {
+        get => _screenViewError;
+        set
+        {
+            _screenViewError = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(ScreenViewError)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(HasScreenViewError)));
+        }
+    }
+    public bool HasScreenViewError => !string.IsNullOrEmpty(ScreenViewError);
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 
@@ -196,6 +210,58 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         stored.Name = dialog.NewName;
         App.SettingsStore.Save();
         RefreshSavedTvs();
+    }
+
+    private async void OnScreenViewClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not SavedTv tv) return;
+        ScreenViewError = null;
+
+        var result = await ScrcpyLauncher.LaunchAsync(tv.Host, tv.Port);
+        if (result.IsSuccess) return;
+        ScreenViewError = result.ErrorMessage;
+    }
+
+    private void OnPhoneScreenViewClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not AdbDevice device) return;
+        ScreenViewError = null;
+
+        var result = ScrcpyLauncher.LaunchBySerialAsync(device.Serial);
+        if (result.IsSuccess) return;
+        ScreenViewError = result.ErrorMessage;
+    }
+
+    private async void OnRefreshPhoneScreenDevicesClick(object sender, RoutedEventArgs e) => await RefreshPhoneScreenDevicesAsync();
+
+    private async void OnNavScreenViewChecked(object sender, RoutedEventArgs e) => await RefreshPhoneScreenDevicesAsync();
+
+    private async Task RefreshPhoneScreenDevicesAsync()
+    {
+        var devices = await AdbDeviceLister.ListAsync();
+        // Exclude anything matching a saved TV's host:port serial - that's
+        // the TV tab's list already, not a phone. Anything left over (USB or
+        // wireless-debugging serial) is assumed to be a phone.
+        var tvSerials = App.SettingsStore.Settings.SavedTvs.Select(tv => $"{tv.Host}:{tv.Port}").ToHashSet();
+        var names = App.SettingsStore.Settings.ScreenViewPhoneNames;
+        PhoneScreenDevices.Clear();
+        foreach (var device in devices.Where(d => !tvSerials.Contains(d.Serial)))
+        {
+            if (names.TryGetValue(device.Model, out var customName)) device.CustomName = customName;
+            PhoneScreenDevices.Add(device);
+        }
+    }
+
+    private void OnRenamePhoneScreenDeviceClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not AdbDevice device) return;
+
+        var dialog = new RenameDeviceWindow(device.DisplayName);
+        if (dialog.ShowDialog() != true) return;
+
+        device.CustomName = dialog.NewName;
+        App.SettingsStore.Settings.ScreenViewPhoneNames[device.Model] = dialog.NewName;
+        App.SettingsStore.Save();
     }
 
     private void OnTvSectionForgetClick(object sender, RoutedEventArgs e)

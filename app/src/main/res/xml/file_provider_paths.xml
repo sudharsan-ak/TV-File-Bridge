@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="downloads" path="downloads/" />
     <cache-path name="clipboard_received" path="clipboard_received/" />
+    <cache-path name="pc_downloads" path="pc_downloads/" />
 </paths>

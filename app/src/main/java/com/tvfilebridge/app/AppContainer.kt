@@ -7,7 +7,9 @@ import com.tvfilebridge.app.clipboard.ClipboardBridge
 import com.tvfilebridge.app.clipboard.ClipboardReceiverServer
 import com.tvfilebridge.app.clipboard.ClipboardSendLog
 import com.tvfilebridge.app.clipboard.PcDeviceStore
+import com.tvfilebridge.app.clipboard.PcFileRepository
 import com.tvfilebridge.app.clipboard.PcFileTransferManager
+import com.tvfilebridge.app.clipboard.PcThumbnailRepository
 import com.tvfilebridge.app.clipboard.ReceivedFileTransferManager
 import com.tvfilebridge.app.clipboard.ReceivedFilesFolderStore
 import com.tvfilebridge.app.connection.AdbConnectionManager
@@ -36,7 +38,7 @@ import kotlinx.coroutines.launch
  * One instance per process, created from Application so it outlives any single
  * Activity/tab and matches AdbConnectionManager's app-lifetime connection.
  */
-class AppContainer(private val appContext: Context) {
+class AppContainer(val appContext: Context) {
     val connectionModeStore = ConnectionModeStore(appContext)
     val connectionManager = AdbConnectionManager(appContext, connectionModeStore)
     val deviceStore = DeviceStore(appContext)
@@ -57,6 +59,8 @@ class AppContainer(private val appContext: Context) {
     val receivedFileTransferManager = ReceivedFileTransferManager()
     val clipboardReceiverServer = ClipboardReceiverServer(appContext, receivedFilesFolderStore, clipboardSendLog, receivedFileTransferManager)
     val pcFileTransferManager = PcFileTransferManager(appContext, clipboardSendLog)
+    val pcFileRepository = PcFileRepository()
+    val pcThumbnailRepository = PcThumbnailRepository(appContext, pcFileRepository)
     val fabPositionStore = FabPositionStore(appContext)
     val sonyAuthStore = com.tvfilebridge.app.remote.SonyAuthStore(appContext)
     val sonyIrccWaker = com.tvfilebridge.app.remote.SonyIrccWaker(sonyAuthStore)
