@@ -6,12 +6,12 @@ Companion suite bridging an Android phone, Windows PC, and Android TV over ADB. 
 
 <table>
 <tr>
-<th>PC App</th>
-<th>Android App</th>
+<th width="55%">PC App</th>
+<th width="45%">Android App</th>
 </tr>
 <tr>
-<td><img height="500" alt="PC companion app" src="https://github.com/user-attachments/assets/6b9db4c2-6853-4b52-b621-83c6f9c8afef" /></td>
-<td><img height="500" alt="Android phone app" src="https://github.com/user-attachments/assets/ebebe8e1-d440-440c-8ad2-59108d5016bf" /></td>
+<td><img width="100%" alt="PC companion app" src="https://github.com/user-attachments/assets/6b9db4c2-6853-4b52-b621-83c6f9c8afef" /></td>
+<td><img width="100%" alt="Android phone app" src="https://github.com/user-attachments/assets/ebebe8e1-d440-440c-8ad2-59108d5016bf" /></td>
 </tr>
 </table>
 
