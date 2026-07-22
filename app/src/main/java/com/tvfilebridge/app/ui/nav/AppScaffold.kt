@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
@@ -38,6 +40,8 @@ import androidx.navigation.compose.rememberNavController
 import com.tvfilebridge.app.AppContainer
 import com.tvfilebridge.app.ui.clipboard.ClipboardScreen
 import com.tvfilebridge.app.ui.files.FilesScreen
+import com.tvfilebridge.app.ui.help.HelpScreen
+import com.tvfilebridge.app.ui.install.InstallAppsScreen
 import com.tvfilebridge.app.ui.remote.RemoteScreen
 import com.tvfilebridge.app.ui.screens.ConnectionStatusChip
 import com.tvfilebridge.app.ui.settings.SettingsScreen
@@ -48,6 +52,8 @@ import kotlinx.coroutines.launch
 private const val SETTINGS_ROUTE = "settings"
 private const val CLIPBOARD_ROUTE = "clipboard"
 private const val SYNC_FOLDERS_ROUTE = "sync_folders"
+private const val HELP_ROUTE = "help"
+private const val INSTALL_APPS_ROUTE = "install_apps"
 
 /** Routes that render full-screen, hiding both the bottom nav and the drawer's hamburger button. */
 private val FULL_SCREEN_ROUTES = setOf(SYNC_FOLDERS_ROUTE)
@@ -176,6 +182,22 @@ fun AppScaffold(container: AppContainer) {
                         },
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
+                    NavigationDrawerItem(
+                        label = { Text("Install apps for TV") },
+                        icon = { Icon(Icons.Filled.Shield, contentDescription = null) },
+                        selected = false,
+                        onClick = {
+                            drawerScope.launch { drawerState.close() }
+                            navController.navigate(INSTALL_APPS_ROUTE) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
                 }
 
                 // Not gated on activeDevice like Wake TV/Fix cursor above -
@@ -274,6 +296,22 @@ fun AppScaffold(container: AppContainer) {
                     },
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
+                NavigationDrawerItem(
+                    label = { Text("Help") },
+                    icon = { Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null) },
+                    selected = false,
+                    onClick = {
+                        drawerScope.launch { drawerState.close() }
+                        navController.navigate(HELP_ROUTE) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
             }
         },
     ) {
@@ -335,10 +373,20 @@ fun AppScaffold(container: AppContainer) {
                     RemoteScreen(container = container, contentPadding = innerPadding, onMenuClick = onMenuClick)
                 }
                 composable(SETTINGS_ROUTE) {
-                    SettingsScreen(container = container, contentPadding = innerPadding)
+                    SettingsScreen(container = container, contentPadding = innerPadding, onMenuClick = onMenuClick)
                 }
                 composable(CLIPBOARD_ROUTE) {
                     ClipboardScreen(container = container, contentPadding = innerPadding, onMenuClick = onMenuClick)
+                }
+                composable(HELP_ROUTE) {
+                    HelpScreen(contentPadding = innerPadding, onMenuClick = onMenuClick)
+                }
+                composable(INSTALL_APPS_ROUTE) {
+                    InstallAppsScreen(
+                        container = container,
+                        contentPadding = innerPadding,
+                        onMenuClick = onMenuClick,
+                    )
                 }
             }
         }

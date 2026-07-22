@@ -10,6 +10,7 @@ public partial class App : Application
     public ClipboardServer Server { get; private set; } = null!;
     public ClipboardWatcher Watcher { get; private set; } = null!;
     public PcTransferManager TransferManager { get; private set; } = null!;
+    public TvAdbClient TvAdbClient { get; } = new();
     private TrayIconManager _trayIcon = null!;
 
     protected override void OnStartup(StartupEventArgs e)

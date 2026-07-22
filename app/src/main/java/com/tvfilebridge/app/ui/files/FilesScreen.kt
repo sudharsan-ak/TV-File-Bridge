@@ -32,8 +32,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.InsertDriveFile
@@ -58,6 +61,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -81,6 +85,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tvfilebridge.app.AppContainer
 import com.tvfilebridge.app.connection.ConnectionState
 import com.tvfilebridge.app.files.RemoteFile
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "webm", "3gp", "mov", "avi")
@@ -104,6 +109,9 @@ fun FilesScreen(
     var detailsTarget by remember { mutableStateOf<RemoteFile?>(null) }
     var deleteTarget by remember { mutableStateOf<RemoteFile?>(null) }
     var deleteError by remember { mutableStateOf<String?>(null) }
+    var renameTarget by remember { mutableStateOf<RemoteFile?>(null) }
+    var renameError by remember { mutableStateOf<String?>(null) }
+    var copyToPcError by remember { mutableStateOf<String?>(null) }
     var viewMode by remember { mutableStateOf(ViewMode.GRID) }
     var uploadConflict by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     var selectedPaths by remember { mutableStateOf(setOf<String>()) }
@@ -152,6 +160,24 @@ fun FilesScreen(
                     selectedPaths = emptySet()
                 }) {
                     Icon(Icons.Filled.Download, contentDescription = "Download selected")
+                }
+                IconButton(onClick = {
+                    val entries = uiState.entries.filter { it.path in selectedPaths }
+                    selectedPaths = emptySet()
+                    scope.launch {
+                        val device = container.pcDeviceStore.devices.first().find { it.isPrimary }
+                        if (device == null) {
+                            copyToPcError = "No primary PC set - add or choose one in PC Sync > Devices."
+                            return@launch
+                        }
+                        val files = viewModel.pullAllToCache(entries)
+                        files.forEach { file ->
+                            val uri = FileProvider.getUriForFile(context, "com.tvfilebridge.app.fileprovider", file)
+                            container.pcFileTransferManager.pushFile(device, uri)
+                        }
+                    }
+                }) {
+                    Icon(Icons.Filled.Computer, contentDescription = "Copy to PC")
                 }
                 IconButton(onClick = { batchDeleteConfirm = true }) {
                     Icon(Icons.Filled.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
@@ -317,6 +343,24 @@ fun FilesScreen(
                     }
                 }
             },
+            onCopy = {
+                sheetTarget = null
+                scope.launch {
+                    viewModel.openFile(entry) { file ->
+                        if (file == null) {
+                            copyToPcError = "Couldn't copy: download failed"
+                            return@openFile
+                        }
+                        val uri = FileProvider.getUriForFile(context, "com.tvfilebridge.app.fileprovider", file)
+                        val clipboardManager = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboardManager.setPrimaryClip(android.content.ClipData.newUri(context.contentResolver, entry.name, uri))
+                    }
+                }
+            },
+            onRename = {
+                sheetTarget = null
+                renameTarget = entry
+            },
             onDetails = {
                 sheetTarget = null
                 detailsTarget = entry
@@ -324,6 +368,43 @@ fun FilesScreen(
             onDelete = {
                 sheetTarget = null
                 deleteTarget = entry
+            },
+        )
+    }
+
+    renameTarget?.let { entry ->
+        RenameFileDialog(
+            currentName = entry.name,
+            onDismiss = { renameTarget = null },
+            onConfirm = { newName ->
+                viewModel.rename(entry, newName) { result ->
+                    if (result.isFailure) {
+                        renameError = result.exceptionOrNull()?.message ?: "Rename failed"
+                    }
+                }
+                renameTarget = null
+            },
+        )
+    }
+
+    renameError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { renameError = null },
+            title = { Text("Couldn't rename") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { renameError = null }) { Text("OK") }
+            },
+        )
+    }
+
+    copyToPcError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { copyToPcError = null },
+            title = { Text("Couldn't copy to PC") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { copyToPcError = null }) { Text("OK") }
             },
         )
     }
@@ -472,6 +553,32 @@ private fun StorageInfoDialog(viewModel: FilesViewModel, onDismiss: () -> Unit) 
     )
 }
 
+@Composable
+private fun RenameFileDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var text by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (text.isNotBlank()) onConfirm(text.trim()) },
+                enabled = text.isNotBlank() && text.trim() != currentName,
+            ) { Text("Rename") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FileActionSheet(
@@ -479,6 +586,8 @@ private fun FileActionSheet(
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
     onOpen: () -> Unit,
+    onCopy: () -> Unit,
+    onRename: () -> Unit,
     onDetails: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -493,6 +602,10 @@ private fun FileActionSheet(
             )
             SheetAction(icon = Icons.Filled.Download, label = "Download", onClick = onDownload)
             SheetAction(icon = Icons.Filled.OpenInNew, label = "Open", onClick = onOpen)
+            if (isThumbnailable(entry)) {
+                SheetAction(icon = Icons.Filled.ContentCopy, label = "Copy", onClick = onCopy)
+            }
+            SheetAction(icon = Icons.Filled.Edit, label = "Rename", onClick = onRename)
             SheetAction(icon = Icons.Filled.Info, label = "Details", onClick = onDetails)
             SheetAction(icon = Icons.Filled.Delete, label = "Delete", onClick = onDelete, isDestructive = true)
         }

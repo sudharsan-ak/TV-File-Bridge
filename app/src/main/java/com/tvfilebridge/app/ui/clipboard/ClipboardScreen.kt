@@ -77,34 +77,36 @@ fun ClipboardScreen(
     var section by remember { mutableStateOf(ClipboardSection.HISTORY) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize().padding(contentPadding),
-        floatingActionButton = {
-            if (section == ClipboardSection.DEVICES) {
-                ExtendedFloatingActionButton(
-                    onClick = { showAddDialog = true },
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text("Add PC") },
-                )
-            }
-        },
-    ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            AppHeader(title = "PC Sync", onMenuClick = onMenuClick)
+    Column(modifier = modifier.fillMaxSize().padding(contentPadding)) {
+        AppHeader(title = "PC Sync", onMenuClick = onMenuClick)
 
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SectionTab("History", section == ClipboardSection.HISTORY) { section = ClipboardSection.HISTORY }
-                SectionTab("Devices", section == ClipboardSection.DEVICES) { section = ClipboardSection.DEVICES }
-                SectionTab("File Sharing", section == ClipboardSection.FILE_SHARING) { section = ClipboardSection.FILE_SHARING }
-            }
+        Scaffold(
+            modifier = Modifier.fillMaxWidth(),
+            floatingActionButton = {
+                if (section == ClipboardSection.DEVICES) {
+                    ExtendedFloatingActionButton(
+                        onClick = { showAddDialog = true },
+                        icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                        text = { Text("Add PC") },
+                    )
+                }
+            },
+        ) { innerPadding ->
+            Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SectionTab("History", section == ClipboardSection.HISTORY) { section = ClipboardSection.HISTORY }
+                    SectionTab("Devices", section == ClipboardSection.DEVICES) { section = ClipboardSection.DEVICES }
+                    SectionTab("File Sharing", section == ClipboardSection.FILE_SHARING) { section = ClipboardSection.FILE_SHARING }
+                }
 
-            when (section) {
-                ClipboardSection.HISTORY -> HistorySection(container)
-                ClipboardSection.DEVICES -> DevicesSection(container)
-                ClipboardSection.FILE_SHARING -> FileSharingSection(container)
+                when (section) {
+                    ClipboardSection.HISTORY -> HistorySection(container)
+                    ClipboardSection.DEVICES -> DevicesSection(container)
+                    ClipboardSection.FILE_SHARING -> FileSharingSection(container)
+                }
             }
         }
     }

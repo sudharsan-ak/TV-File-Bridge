@@ -209,15 +209,28 @@ class FilesViewModel(
      */
     fun openFile(entry: RemoteFile, onReady: (java.io.File?) -> Unit) {
         viewModelScope.launch {
-            val cacheFile = transferManager.cacheFileFor(entry.name)
-            if (cacheFile.exists() && cacheFile.length() == entry.sizeBytes) {
-                onReady(cacheFile)
-                return@launch
-            }
-            val result = fileRepository.pullToCache(entry.path, cacheFile)
-            onReady(if (result.isSuccess) cacheFile else null)
+            onReady(pullToCacheFile(entry))
         }
     }
+
+    /** Same cache-or-pull logic as [openFile], exposed directly for callers
+     *  (like bulk Copy to PC) that need the local file without an Open intent. */
+    private suspend fun pullToCacheFile(entry: RemoteFile): java.io.File? {
+        val cacheFile = transferManager.cacheFileFor(entry.name)
+        if (cacheFile.exists() && cacheFile.length() == entry.sizeBytes) return cacheFile
+        val result = fileRepository.pullToCache(entry.path, cacheFile)
+        return if (result.isSuccess) cacheFile else null
+    }
+
+    /**
+     * Pulls each entry to cache (sequentially, reusing the same cache-or-pull
+     * path as Open/download) and hands back local files for the caller to
+     * push to a PC device - kept out of this ViewModel since building a
+     * FileProvider content:// Uri needs a Context, which the Composable
+     * already has via LocalContext.
+     */
+    suspend fun pullAllToCache(entries: List<RemoteFile>): List<java.io.File> =
+        entries.filterNot { it.isDirectory }.mapNotNull { pullToCacheFile(it) }
 
     /**
      * Uploads to the currently viewed folder. If a file with the same name
@@ -253,6 +266,14 @@ class FilesViewModel(
                 .map { list -> list.find { it.id == transferId } }
                 .first { it == null || it.status != TransferStatus.IN_PROGRESS }
             if (_currentPath.value == targetDir) refresh()
+        }
+    }
+
+    fun rename(entry: RemoteFile, newName: String, onDone: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val result = fileRepository.rename(entry.path, newName)
+            if (result.isSuccess) refresh()
+            onDone(result.map {})
         }
     }
 

@@ -37,6 +37,25 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
         return result
     }
 
+    /**
+     * Renames in place via shell `mv` (dadb's sync API has no dedicated
+     * rename/move command). Renaming within the same parent directory only -
+     * [newName] is just the new leaf name, not a full path.
+     */
+    suspend fun rename(path: String, newName: String): Result<String> {
+        val result = connectionManager.withDadb { dadb ->
+            val parent = path.substringBeforeLast('/', "")
+            val newPath = if (parent.isEmpty()) newName else "$parent/$newName"
+            val response = dadb.shell("mv ${shellQuote(path)} ${shellQuote(newPath)}")
+            if (response.exitCode != 0) {
+                throw IllegalStateException(response.errorOutput.ifBlank { response.output })
+            }
+            newPath
+        }
+        result.exceptionOrNull()?.let { Log.e(TAG, "rename($path -> $newName) failed: ${it.message}", it) }
+        return result
+    }
+
     suspend fun delete(path: String): Result<Unit> {
         val result = connectionManager.withDadb { dadb ->
             val response = dadb.shell("rm -rf ${shellQuote(path)}")

@@ -71,6 +71,17 @@ tasks.register<Copy>("copyCompanionApk") {
     rename { "tv_companion.apk" }
 }
 
+// Same reasoning as copyCompanionApk above, for the accessibility watchdog -
+// bundled so the phone app can install it onto the TV over ADB too, rather
+// than requiring a separate manual sideload step.
+tasks.register<Copy>("copyWatchdogApk") {
+    dependsOn(":accessibility-watchdog:assembleDebug")
+    from(project(":accessibility-watchdog").layout.buildDirectory.file("outputs/apk/debug/accessibility-watchdog-debug.apk"))
+    into(layout.projectDirectory.dir("src/main/assets"))
+    rename { "accessibility_watchdog.apk" }
+}
+
 tasks.matching { it.name.startsWith("merge") && it.name.contains("Assets") }.configureEach {
     dependsOn("copyCompanionApk")
+    dependsOn("copyWatchdogApk")
 }

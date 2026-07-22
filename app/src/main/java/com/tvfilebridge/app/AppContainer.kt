@@ -15,6 +15,7 @@ import com.tvfilebridge.app.connection.ConnectionModeStore
 import com.tvfilebridge.app.cursor.CursorBridge
 import com.tvfilebridge.app.cursor.TV_COMPANION_ACCESSIBILITY_SERVICE
 import com.tvfilebridge.app.cursor.TvCompanionInstaller
+import com.tvfilebridge.app.cursor.WatchdogInstaller
 import com.tvfilebridge.app.data.DeviceStore
 import com.tvfilebridge.app.discovery.TvDiscovery
 import com.tvfilebridge.app.files.FileRepository
@@ -47,6 +48,7 @@ class AppContainer(private val appContext: Context) {
     val syncManager = SyncManager(appContext, fileRepository, transferManager, syncPairStore)
     val remoteControlRepository = RemoteControlRepository(connectionManager)
     val tvCompanionInstaller = TvCompanionInstaller(appContext, connectionManager)
+    val watchdogInstaller = WatchdogInstaller(appContext, connectionManager)
     val cursorBridge = CursorBridge(connectionManager, remoteControlRepository)
     val pcDeviceStore = PcDeviceStore(appContext)
     val clipboardBridge = ClipboardBridge(appContext)

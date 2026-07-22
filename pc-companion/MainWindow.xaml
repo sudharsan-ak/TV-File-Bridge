@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:PcCompanion"
-        Title="TV File Bridge - Clipboard" Height="600" Width="500"
+        Title="TV File Bridge - Clipboard" Height="680" Width="820" MinWidth="640" MinHeight="480"
         Background="#0B1615"
         WindowStartupLocation="CenterScreen">
 
@@ -13,6 +13,7 @@
         <local:ClipboardItemTypeToVisibilityConverter x:Key="FileVisibility" ShowFor="File"/>
         <local:ImagePathToBitmapConverter x:Key="ImagePathToBitmap"/>
         <local:BoolToVisibilityConverter x:Key="BoolVisibility"/>
+        <local:InverseBoolToVisibilityConverter x:Key="InverseBoolVisibility"/>
         <local:PrimaryButtonLabelConverter x:Key="PrimaryButtonLabel"/>
         <local:TransferStatusToVisibilityConverter x:Key="TransferInProgressVisibility" ShowFor="InProgress"/>
         <local:TransferStatusToVisibilityConverter x:Key="TransferFailedVisibility" ShowFor="Failed"/>
@@ -29,6 +30,42 @@
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        </Style>
+
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource HairlineBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="4">
+                            <StackPanel IsItemsHost="True"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border Name="Border" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{StaticResource CardBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="FlatButton" TargetType="Button">
@@ -97,6 +134,31 @@
             </Setter>
         </Style>
 
+        <Style x:Key="NavItem" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border Name="Border" Background="Transparent" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{StaticResource CardBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource AmberBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{StaticResource CardBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ListBox">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -156,9 +218,59 @@
         </DataTemplate>
     </Window.Resources>
 
-    <TabControl Margin="16">
-        <TabItem Header="History">
-            <DockPanel Margin="0,16,0,0">
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="150"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" Margin="0,8,12,0">
+            <RadioButton x:Name="NavHome" Content="Home" Style="{StaticResource NavItem}" IsChecked="True" GroupName="Nav" Margin="0,0,0,4"/>
+            <RadioButton x:Name="NavDevices" Content="Devices" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
+            <RadioButton x:Name="NavTransfers" Content="Transfers" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
+            <RadioButton x:Name="NavTvFiles" Content="TV Files" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4" Checked="OnNavTvFilesChecked"/>
+            <RadioButton x:Name="NavHistory" Content="History" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
+            <RadioButton x:Name="NavSettings" Content="Settings" Style="{StaticResource NavItem}" GroupName="Nav"/>
+        </StackPanel>
+
+        <Border Grid.Column="1" Background="{StaticResource HairlineBrush}" Width="1" HorizontalAlignment="Left" Margin="0,8,0,8"/>
+
+        <Grid Grid.Column="1" Margin="16,0,0,0">
+        <StackPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavHome, Converter={StaticResource BoolVisibility}}">
+            <TextBlock Text="TV File Bridge" FontSize="22" FontWeight="Bold"/>
+            <TextBlock Text="Clipboard and file sync between this PC and your phone/TV setup." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,20"/>
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="Devices" FontWeight="Bold"/>
+                    <TextBlock Text="Phones paired with this PC for clipboard and file sync." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="Transfers" FontWeight="Bold"/>
+                    <TextBlock Text="Files sent and received between this PC and your phone." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="TV Files" FontWeight="Bold"/>
+                    <TextBlock Text="Browse and download files straight from your TV over ADB." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="History" FontWeight="Bold"/>
+                    <TextBlock Text="Everything copied or sent between this PC and your devices." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="Settings" FontWeight="Bold"/>
+                    <TextBlock Text="Device name, port, startup behavior, and auto-send rules." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <DockPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavHistory, Converter={StaticResource BoolVisibility}}">
                 <Button DockPanel.Dock="Top" Content="Clear all" Style="{StaticResource FlatButton}"
                         HorizontalAlignment="Right" Margin="0,0,0,12" Click="OnClearAllClick"/>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -208,13 +320,10 @@
                     </ItemsControl>
                 </ScrollViewer>
             </DockPanel>
-        </TabItem>
 
-        <TabItem Header="Devices">
-            <DockPanel Margin="0,16,0,0">
-                <TextBlock DockPanel.Dock="Top" Text="Paired devices" FontWeight="Bold" FontSize="14" Margin="0,0,0,12"/>
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding PairedDevices}">
+        <DockPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavDevices, Converter={StaticResource BoolVisibility}}">
+                <TextBlock DockPanel.Dock="Top" Text="Paired phones" FontWeight="Bold" FontSize="14" Margin="0,0,0,12"/>
+                <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding PairedDevices}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Style="{StaticResource CardBorder}">
@@ -225,7 +334,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0">
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding DeviceName}" FontWeight="Bold"/>
+                                                <TextBlock Text="{Binding DeviceName}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}"/>
                                                 <TextBlock Text="PRIMARY" FontSize="10" FontWeight="Bold" Margin="6,2,0,0"
                                                            Foreground="{StaticResource TealBrush}"
                                                            Visibility="{Binding IsPrimary, Converter={StaticResource BoolVisibility}}"/>
@@ -246,12 +355,45 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                <TextBlock DockPanel.Dock="Top" Text="Connected TVs" FontWeight="Bold" FontSize="14" Margin="0,20,0,12"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding SavedTvs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardBorder}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}"/>
+                                                <TextBlock Text="CONNECTED" FontSize="10" FontWeight="Bold" Margin="6,2,0,0"
+                                                           Foreground="{StaticResource TealBrush}"
+                                                           Visibility="{Binding IsConnected, Converter={StaticResource BoolVisibility}}"/>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Port, StringFormat='Port {0}'}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <Button Content="Disconnect" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
+                                                    Click="OnTvSectionDisconnectClick" Tag="{Binding}"
+                                                    Visibility="{Binding IsConnected, Converter={StaticResource BoolVisibility}}"/>
+                                            <Button Content="Rename" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
+                                                    Click="OnTvSectionRenameClick" Tag="{Binding}"/>
+                                            <Button Content="Forget" Style="{StaticResource FlatButton}"
+                                                    Click="OnTvSectionForgetClick" Tag="{Binding}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </ScrollViewer>
             </DockPanel>
-        </TabItem>
 
-        <TabItem Header="Transfers">
-            <TabControl Margin="0,16,0,0" Padding="0">
+        <TabControl Margin="0,16,0,0" Padding="0" Visibility="{Binding IsChecked, ElementName=NavTransfers, Converter={StaticResource BoolVisibility}}">
                 <TabItem Header="Sent">
                     <DockPanel Margin="0,12,0,0">
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
@@ -275,10 +417,151 @@
                     </DockPanel>
                 </TabItem>
             </TabControl>
-        </TabItem>
 
-        <TabItem Header="Settings">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0">
+        <DockPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavTvFiles, Converter={StaticResource BoolVisibility}}">
+            <StackPanel x:Name="TvConnectPanel" DockPanel.Dock="Top">
+                <TextBlock Text="Browse and download files from your TV, straight to this PC." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                <TextBlock Text="TV IP ADDRESS" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"/>
+                <TextBox x:Name="TvHostBox" Margin="0,0,0,14"/>
+                <TextBlock Text="PORT" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"/>
+                <TextBox x:Name="TvPortBox" Text="5555" Margin="0,0,0,18"/>
+                <Button x:Name="TvConnectButton" Content="Connect" Style="{StaticResource AccentButton}" HorizontalAlignment="Left" Click="OnTvConnectClick"/>
+                <TextBlock x:Name="TvStatusText" Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0"/>
+            </StackPanel>
+
+            <Grid x:Name="TvBrowserPanel" Visibility="Collapsed" AllowDrop="True"
+                  DragEnter="OnTvDragEnter" DragLeave="OnTvDragLeave" Drop="OnTvDrop">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                    <Button DockPanel.Dock="Right" Content="Connect new TV" Style="{StaticResource FlatButton}" Click="OnTvConnectNewClick"/>
+                    <Button DockPanel.Dock="Right" Content="Upload" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvUploadClick"/>
+                    <Button x:Name="TvViewModeButton" DockPanel.Dock="Right" Content="List view" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvToggleViewModeClick"/>
+                    <ItemsControl ItemsSource="{Binding TvBreadcrumbs}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Label}" Foreground="{StaticResource TealBrush}" FontSize="12"
+                                               Cursor="Hand" MouseLeftButtonUp="OnTvBreadcrumbClick" Tag="{Binding}"/>
+                                    <TextBlock Text=" / " Foreground="{StaticResource MutedTextBrush}" FontSize="12"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </DockPanel>
+
+                <Border x:Name="TvDropOverlay" Grid.Row="0" Grid.RowSpan="3" Background="#CC122321" CornerRadius="14"
+                        BorderBrush="{StaticResource TealBrush}" BorderThickness="2" Visibility="Collapsed" Panel.ZIndex="10">
+                    <TextBlock Text="Drop to upload to this folder" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{StaticResource TealBrush}" FontWeight="Bold" FontSize="16" IsHitTestVisible="False"/>
+                </Border>
+
+                <DockPanel x:Name="TvSelectionBar" Grid.Row="1" Margin="0,0,0,8" Visibility="Collapsed">
+                    <Button DockPanel.Dock="Left" Content="✕" Style="{StaticResource FlatButton}" Padding="10,6" Click="OnTvClearSelectionClick"/>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Content="Download" Style="{StaticResource FlatButton}" Margin="6,0,0,0" Click="OnTvBulkDownloadClick"/>
+                        <Button Content="Delete" Style="{StaticResource FlatButton}" Margin="6,0,0,0" Click="OnTvBulkDeleteClick"/>
+                    </StackPanel>
+                    <TextBlock x:Name="TvSelectionCountText" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </DockPanel>
+
+                <ScrollViewer x:Name="TvListViewScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                    <ItemsControl ItemsSource="{Binding TvFiles}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardBorder}" Cursor="Hand" MouseLeftButtonUp="OnTvFileClick"
+                                        PreviewMouseLeftButtonDown="OnTvCardPreviewMouseDown" PreviewMouseMove="OnTvCardPreviewMouseMove" Tag="{Binding}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Width="20" Height="20" CornerRadius="999" Margin="0,0,10,0"
+                                                BorderBrush="{StaticResource MutedTextBrush}" BorderThickness="2"
+                                                Background="{StaticResource SurfaceBrush}" Cursor="Hand"
+                                                MouseLeftButtonUp="OnTvCheckboxClick" Tag="{Binding}"
+                                                Visibility="{Binding DataContext.IsTvSelecting, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}">
+                                            <TextBlock Text="✓" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource SurfaceBrush}" FontWeight="Bold"
+                                                       Visibility="{Binding IsSelected, Converter={StaticResource BoolVisibility}}"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="Folder" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,2,0,0"
+                                                       Visibility="{Binding IsDirectory, Converter={StaticResource BoolVisibility}}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                            <Button Content="⋮" Style="{StaticResource FlatButton}" Padding="10,4" Click="OnTvMenuClick" Tag="{Binding}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="TvGridViewScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding TvFiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardBorder}" Width="140" Cursor="Hand"
+                                        MouseLeftButtonUp="OnTvFileClick"
+                                        PreviewMouseLeftButtonDown="OnTvCardPreviewMouseDown" PreviewMouseMove="OnTvCardPreviewMouseMove"
+                                        Tag="{Binding}" Margin="0,0,10,10" Padding="10">
+                                    <StackPanel>
+                                        <Border Height="90" CornerRadius="8" ClipToBounds="True" Background="{StaticResource SurfaceBrush}">
+                                            <Grid>
+                                                <Path Data="M10,4 L2,4 C0.9,4 0,4.9 0,6 L0,18 C0,19.1 0.9,20 2,20 L22,20 C23.1,20 24,19.1 24,18 L24,8 C24,6.9 23.1,6 22,6 L12,6 Z"
+                                                      Fill="{StaticResource TealBrush}" Stretch="Uniform" Width="40" Height="40"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      Visibility="{Binding IsDirectory, Converter={StaticResource BoolVisibility}}"/>
+                                                <TextBlock Text="🎬" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="{Binding IsVideo, Converter={StaticResource BoolVisibility}}"/>
+                                                <TextBlock Text="📄" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="{Binding IsOther, Converter={StaticResource BoolVisibility}}"/>
+                                                <Image Source="{Binding ThumbnailPath, Converter={StaticResource ImagePathToBitmap}}"
+                                                       Stretch="UniformToFill"
+                                                       Visibility="{Binding IsImage, Converter={StaticResource BoolVisibility}}"/>
+                                                <Border Width="22" Height="22" CornerRadius="999" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
+                                                        BorderBrush="White" BorderThickness="2" Background="#590B1615" Cursor="Hand"
+                                                        MouseLeftButtonUp="OnTvCheckboxClick" Tag="{Binding}"
+                                                        Visibility="{Binding DataContext.IsTvSelecting, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}">
+                                                    <TextBlock Text="✓" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource SurfaceBrush}" FontWeight="Bold"
+                                                               Visibility="{Binding IsSelected, Converter={StaticResource BoolVisibility}}"/>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                        <DockPanel Margin="0,8,0,0">
+                                            <Button DockPanel.Dock="Right" Content="⋮" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="13" Click="OnTvMenuClick" Tag="{Binding}"/>
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}"
+                                                       FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </DockPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavSettings, Converter={StaticResource BoolVisibility}}">
             <StackPanel>
                 <TextBlock Text="DEVICE NAME" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"/>
                 <TextBox x:Name="DeviceNameBox" Margin="0,0,0,18"/>
@@ -317,6 +600,6 @@
                 <Button Content="Save settings" Style="{StaticResource AccentButton}" HorizontalAlignment="Left" Click="OnSaveSettingsClick" Margin="0,0,0,16"/>
             </StackPanel>
             </ScrollViewer>
-        </TabItem>
-    </TabControl>
+        </Grid>
+    </Grid>
 </Window>

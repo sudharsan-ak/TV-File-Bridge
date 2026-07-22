@@ -18,6 +18,10 @@ bin/
 obj/
 *.user
 .vs/
+pc-companion/publish/
+
+# Local release-artifact staging (not source, rebuilt each release)
+release-staging/
 
 # Keystores - never commit signing material
 *.jks

@@ -54,27 +54,33 @@ import com.tvfilebridge.app.connection.ConnectionState
 import com.tvfilebridge.app.data.SavedDevice
 import com.tvfilebridge.app.discovery.DiscoveredDevice
 import com.tvfilebridge.app.AppContainer
+import com.tvfilebridge.app.ui.nav.AppHeader
+import androidx.compose.foundation.layout.fillMaxWidth
 
 @Composable
 fun SettingsScreen(
     container: AppContainer,
     contentPadding: PaddingValues,
+    onMenuClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModelFactory(container))
     val uiState by viewModel.uiState.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        modifier = modifier.padding(contentPadding),
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAddDialog = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("Add TV") },
-            )
-        },
-    ) { innerPadding ->
+    Column(modifier = modifier.fillMaxSize().padding(contentPadding)) {
+        AppHeader(title = "Settings", onMenuClick = onMenuClick)
+
+        Scaffold(
+            modifier = Modifier.fillMaxWidth(),
+            floatingActionButton = {
+                ExtendedFloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("Add TV") },
+                )
+            },
+        ) { innerPadding ->
         if (uiState.devices.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
@@ -121,6 +127,7 @@ fun SettingsScreen(
                     )
                 }
             }
+        }
         }
     }
 

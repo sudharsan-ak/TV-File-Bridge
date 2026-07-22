@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PcCompanion;
 
 public enum ClipboardItemType
@@ -46,6 +48,19 @@ public class PairedDevice
     public bool IsPrimary { get; set; }
 }
 
+public class SavedTv
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = "";
+    public string Host { get; set; } = "";
+    public int Port { get; set; } = 5555;
+
+    // Live-only, never persisted - recomputed each time the Devices page
+    // refreshes from whichever TV TvAdbClient currently holds a session for.
+    [JsonIgnore]
+    public bool IsConnected { get; set; }
+}
+
 public class AppSettings
 {
     public int Port { get; set; } = 58821;
@@ -69,4 +84,8 @@ public class AppSettings
     // than text/images just going onto the clipboard, so it's opt-in.
     public bool ReceiveFilesFromPhone { get; set; }
     public string? ReceivedFilesFolder { get; set; }
+
+    // TVs this PC has connected to directly over ADB, for the TV Files tab -
+    // independent of any phone's own TV connection/pairing.
+    public List<SavedTv> SavedTvs { get; set; } = new();
 }
