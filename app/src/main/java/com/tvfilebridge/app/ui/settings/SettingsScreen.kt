@@ -374,7 +374,7 @@ private fun StatusRow(state: ConnectionState) {
             is ConnectionState.AwaitingAuthorization -> {
                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text("Waiting for TV authorization — check \"Always allow\" on the TV", style = MaterialTheme.typography.bodyMedium)
+                Text("Waiting for TV authorization - check \"Always allow\" on the TV", style = MaterialTheme.typography.bodyMedium)
             }
             is ConnectionState.Failed -> {
                 Icon(Icons.Filled.Circle, contentDescription = null, modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.error)

@@ -34,7 +34,7 @@ private const val TAG = "AdbConnectionManager"
 private const val HEARTBEAT_INTERVAL_MS = 20_000L
 
 /**
- * Owns the single live ADB connection to whichever TV is active. Not tab-scoped —
+ * Owns the single live ADB connection to whichever TV is active. Not tab-scoped -
  * lives above the nav shell so any tab (Files, Transfers, future Remote) can read
  * connection state or issue commands through the same session.
  *
@@ -42,7 +42,7 @@ private const val HEARTBEAT_INTERVAL_MS = 20_000L
  * commands on it concurrently from different coroutines corrupts the stream
  * ("Broken pipe" on every command afterward). All command execution goes
  * through [withDadb], which holds a mutex for the duration of one command and
- * treats any socket-level failure as connection death — clearing the cached
+ * treats any socket-level failure as connection death - clearing the cached
  * instance and reconnecting on the next call, rather than reusing a dead pipe.
  */
 class AdbConnectionManager(context: Context, private val connectionModeStore: ConnectionModeStore) {
@@ -183,11 +183,11 @@ class AdbConnectionManager(context: Context, private val connectionModeStore: Co
     }
 
     /**
-     * Silently detects a dropped connection (TV sleep, Wi-Fi blip — spec §8)
+     * Silently detects a dropped connection (TV sleep, Wi-Fi blip - spec §8)
      * and reconnects without the user needing to revisit Settings. Pings on
      * the same command lock as everything else, so it never races a real
      * command; a failed ping reconnects to the same host immediately. Runs
-     * for the lifetime of one connection — started once per successful
+     * for the lifetime of one connection - started once per successful
      * connect, not re-armed by its own reconnect attempts.
      */
     private fun startHeartbeat() {
@@ -250,13 +250,13 @@ class AdbConnectionManager(context: Context, private val connectionModeStore: Co
      * Sets up a local TCP forward to [remotePort] on the active TV, for
      * features that need a persistent socket (e.g. the cursor companion
      * app) rather than a one-shot `shell`/`pull`/`push` command. Unlike
-     * [withDadb], the returned forward is not torn down after one call —
+     * [withDadb], the returned forward is not torn down after one call -
      * the caller owns its lifetime and must call `close()` on the result.
      * Per dadb's implementation this spins up its own background threads,
      * so it does not contend with [withDadb]'s command serialization.
      *
      * Returns null if not currently connected. The forward does NOT survive
-     * a reconnect (heartbeat-triggered or manual) — callers should watch
+     * a reconnect (heartbeat-triggered or manual) - callers should watch
      * [state] and re-forward after a reconnect.
      */
     suspend fun tcpForward(localPort: Int, remotePort: Int): AutoCloseable? {

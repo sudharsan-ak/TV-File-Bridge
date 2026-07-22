@@ -106,7 +106,7 @@ class TransferManager(
         return id
     }
 
-    /** Local cache path a completed pull was saved to — used by "Open". */
+    /** Local cache path a completed pull was saved to - used by "Open". */
     fun cacheFileFor(fileName: String): File = File(cacheDir, fileName)
 
     /**

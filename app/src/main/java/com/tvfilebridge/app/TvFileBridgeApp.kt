@@ -20,7 +20,7 @@ class TvFileBridgeApp : Application() {
      * stream closing mid-forward while reconnecting) throws on that pool's
      * thread with no app-level try/catch reachable, which otherwise crashes
      * the whole process. This only swallows exceptions from dadb's own
-     * package on non-main threads — anything on the main thread, or from
+     * package on non-main threads - anything on the main thread, or from
      * our own code, still crashes normally so real bugs stay visible.
      */
     private fun installBackgroundThreadSafetyNet() {

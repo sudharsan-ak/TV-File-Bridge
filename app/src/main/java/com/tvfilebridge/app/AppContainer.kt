@@ -31,7 +31,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Minimal manual dependency holder — no DI framework needed for this app's size.
+ * Minimal manual dependency holder - no DI framework needed for this app's size.
  * One instance per process, created from Application so it outlives any single
  * Activity/tab and matches AdbConnectionManager's app-lifetime connection.
  */

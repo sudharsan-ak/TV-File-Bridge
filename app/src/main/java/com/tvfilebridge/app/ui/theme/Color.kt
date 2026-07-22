@@ -2,7 +2,7 @@ package com.tvfilebridge.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Fallback dark palette — deep teal surfaces, amber accent
+// Fallback dark palette - deep teal surfaces, amber accent
 val TealPrimaryDark = Color(0xFF37C6B0)
 val TealPrimaryContainerDark = Color(0xFF16302C)
 val AmberSecondaryDark = Color(0xFFF0A94E)
@@ -15,7 +15,7 @@ val OnSurfaceMutedDark = Color(0xFF8FB3AC)
 val OutlineDark = Color(0xFF22403B)
 val ErrorDark = Color(0xFFFF6B5E)
 
-// Fallback light palette — derived from the same hues
+// Fallback light palette - derived from the same hues
 val TealPrimaryLight = Color(0xFF0F7A69)
 val TealPrimaryContainerLight = Color(0xFFB6EEE2)
 val AmberSecondaryLight = Color(0xFFA5650A)

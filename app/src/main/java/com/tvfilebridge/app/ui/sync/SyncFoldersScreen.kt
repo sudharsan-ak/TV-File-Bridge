@@ -171,7 +171,7 @@ fun SyncFoldersScreen(container: AppContainer, onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text("Remove \"${pair.label}\" pairing?") },
-            text = { Text("This only removes the pairing — no files on your phone or TV are deleted.") },
+            text = { Text("This only removes the pairing - no files on your phone or TV are deleted.") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.removePair(pair.id)

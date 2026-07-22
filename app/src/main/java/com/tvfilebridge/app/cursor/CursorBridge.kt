@@ -27,7 +27,7 @@ data class RemoteApp(val packageName: String, val label: String, val iconBase64:
  * `adb forward` tunnel (via AdbConnectionManager.tcpForward) and sends the
  * plain-text command protocol over it.
  *
- * Keeps ONE persistent socket open rather than reconnecting per command —
+ * Keeps ONE persistent socket open rather than reconnecting per command -
  * a touchpad drag fires MOVE many times a second, and opening a fresh
  * `dadb.open()`-backed connection for each one flooded TcpForwarder's
  * connection-handling thread pool badly enough that a stream-closed error

@@ -14,7 +14,7 @@ private const val MAX_CACHE_BYTES = 200L * 1024 * 1024 // 200 MB bounded LRU
 /**
  * Pulls and caches thumbnail-source images keyed by path+size+mtime, so a file
  * is never re-pulled once cached (spec §8). Concurrency is capped separately
- * from the single-command AdbConnectionManager lock — withDadb already
+ * from the single-command AdbConnectionManager lock - withDadb already
  * serializes actual transport use, this semaphore just avoids piling up
  * dozens of queued pulls at once when a long list scrolls into view.
  */

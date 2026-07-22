@@ -16,7 +16,7 @@ private const val PER_HOST_TIMEOUT_MS = 250
 
 /**
  * Scans the phone's current Wi-Fi /24 subnet for hosts with port 5555 open.
- * A plain TCP-connect probe, not a full ADB handshake — good enough signal that
+ * A plain TCP-connect probe, not a full ADB handshake - good enough signal that
  * something ADB-like is listening; the real auth/connect happens when the user
  * taps Connect. Runs all 254 hosts concurrently so the whole scan finishes in a
  * couple of seconds rather than minutes.

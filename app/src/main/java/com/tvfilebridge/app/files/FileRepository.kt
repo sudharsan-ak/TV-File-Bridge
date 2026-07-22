@@ -13,7 +13,7 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
 
     /**
      * Lists a directory via `ls -la` shell parsing (dadb's public sync API only
-     * exposes send/recv, no LIST/STAT — see spec §8 fallback). Toybox `ls -la`
+     * exposes send/recv, no LIST/STAT - see spec §8 fallback). Toybox `ls -la`
      * format: perms links owner group size date time name, one entry per line,
      * preceded by a "total N" line. Handles filenames with spaces by joining
      * every token past the fixed date/time columns rather than splitting naively.
@@ -74,7 +74,7 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
      * Recursively finds files under [rootPath] whose extension is in
      * [extensions] (used by the type-filter chips: Images/Videos/Documents).
      * When [matchNone] is true, [extensions] is treated as the set of known
-     * extensions to *exclude* (the "Other" filter — anything not matching a
+     * extensions to *exclude* (the "Other" filter - anything not matching a
      * known type).
      */
     suspend fun searchByExtensions(rootPath: String, extensions: Set<String>, matchNone: Boolean = false): Result<List<RemoteFile>> {
@@ -145,7 +145,7 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
-            response.output.trim().split(Regex("\\s+")).firstOrNull() ?: "—"
+            response.output.trim().split(Regex("\\s+")).firstOrNull() ?: "-"
         }
         result.exceptionOrNull()?.let { Log.e(TAG, "folderSize($path) failed: ${it.message}", it) }
         return result
@@ -179,7 +179,7 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
         val time = parts[6]
         var name = parts[7]
 
-        // Symlinks: "name -> target" — keep just the link name.
+        // Symlinks: "name -> target" - keep just the link name.
         val arrowIndex = name.indexOf(" -> ")
         if (arrowIndex >= 0) name = name.substring(0, arrowIndex)
 

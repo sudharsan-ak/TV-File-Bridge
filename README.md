@@ -18,7 +18,7 @@ Companion suite bridging an Android phone, Windows PC, and Android TV over ADB. 
 |---|---|
 | File browser | Browse/search/filter the TV's storage, thumbnails, storage usage |
 | File transfer | TV↔phone sync folder, Share-sheet push, progress/retry |
-| Remote control | D-pad, keyboard, volume, transport, power — pure ADB, no companion needed |
+| Remote control | D-pad, keyboard, volume, transport, power - pure ADB, no companion needed |
 | Cursor mode | Real on-screen cursor + touchpad drag, via the TV companion app |
 | Apps tab | Launch installed TV apps from the phone |
 | Now Playing | Title/artist/progress bar scraped from the on-screen player, seek by tapping the real seek bar |
