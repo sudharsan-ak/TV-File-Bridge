@@ -266,6 +266,15 @@ class AdbConnectionManager(context: Context, private val connectionModeStore: Co
         }
     }
 
+    /**
+     * Exposes the raw Dadb instance for callers that need a persistent
+     * stream outside withDadb's one-command-at-a-time serialization (screen
+     * mirroring's video/control sockets and the scrcpy-server shell process,
+     * which all stay open for the session's whole lifetime) - same exception
+     * to the lock that [tcpForward] already relies on. Null if not connected.
+     */
+    fun currentDadb(): Dadb? = dadb
+
     private fun classifyFailure(e: Exception): FailureReason = when {
         e is UnknownHostException -> FailureReason.UNKNOWN_HOST
         e is ConnectException && e.message?.contains("refused", ignoreCase = true) == true ->

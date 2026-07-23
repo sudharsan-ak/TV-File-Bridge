@@ -66,6 +66,7 @@ class AppContainer(val appContext: Context) {
     val sonyIrccWaker = com.tvfilebridge.app.remote.SonyIrccWaker(sonyAuthStore)
     val tvScreenshotSaver = com.tvfilebridge.app.remote.TvScreenshotSaver(appContext, remoteControlRepository, receivedFilesFolderStore)
     val pcScreenshotRequester = com.tvfilebridge.app.clipboard.PcScreenshotRequester(appContext, receivedFilesFolderStore)
+    val mirrorSessionManager = com.tvfilebridge.app.mirror.MirrorSessionManager(appContext, connectionManager)
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 

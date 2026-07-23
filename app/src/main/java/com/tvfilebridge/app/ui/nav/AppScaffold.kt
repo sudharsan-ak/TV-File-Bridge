@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
@@ -54,6 +55,7 @@ private const val CLIPBOARD_ROUTE = "clipboard"
 private const val SYNC_FOLDERS_ROUTE = "sync_folders"
 private const val HELP_ROUTE = "help"
 private const val INSTALL_APPS_ROUTE = "install_apps"
+private const val MIRROR_ROUTE = "mirror"
 
 /** Routes that render full-screen, hiding both the bottom nav and the drawer's hamburger button. */
 private val FULL_SCREEN_ROUTES = setOf(SYNC_FOLDERS_ROUTE)
@@ -198,6 +200,22 @@ fun AppScaffold(container: AppContainer) {
                         },
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
+                    NavigationDrawerItem(
+                        label = { Text("Screen Mirror") },
+                        icon = { Icon(Icons.Filled.ScreenShare, contentDescription = null) },
+                        selected = false,
+                        onClick = {
+                            drawerScope.launch { drawerState.close() }
+                            navController.navigate(MIRROR_ROUTE) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
                 }
 
                 // Not gated on activeDevice like Wake TV/Fix cursor above -
@@ -319,10 +337,13 @@ fun AppScaffold(container: AppContainer) {
             bottomBar = {
                 val backStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = backStackEntry?.destination?.route
+                val isMirrorFullscreen by container.mirrorSessionManager.isFullscreen.collectAsState()
 
                 // Full-screen sub-destinations (pushed from a tab, not a tab
-                // themselves) hide the bottom nav rather than sharing its frame.
-                if (currentRoute !in FULL_SCREEN_ROUTES) {
+                // themselves) hide the bottom nav rather than sharing its frame -
+                // same treatment for Screen Mirror's fullscreen landscape mode,
+                // which is a dynamic in-screen state rather than its own route.
+                if (currentRoute !in FULL_SCREEN_ROUTES && !isMirrorFullscreen) {
                     NavigationBar {
                         AppDestination.entries.forEach { destination ->
                             val selected = currentRoute == destination.route
@@ -383,6 +404,13 @@ fun AppScaffold(container: AppContainer) {
                 }
                 composable(INSTALL_APPS_ROUTE) {
                     InstallAppsScreen(
+                        container = container,
+                        contentPadding = innerPadding,
+                        onMenuClick = onMenuClick,
+                    )
+                }
+                composable(MIRROR_ROUTE) {
+                    com.tvfilebridge.app.ui.mirror.TvMirrorScreen(
                         container = container,
                         contentPadding = innerPadding,
                         onMenuClick = onMenuClick,
