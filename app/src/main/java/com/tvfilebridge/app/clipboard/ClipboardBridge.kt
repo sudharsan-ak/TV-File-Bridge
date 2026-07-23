@@ -60,6 +60,28 @@ class ClipboardBridge(private val context: Context) {
         }
     }
 
+    /**
+     * No-op "ping" push, used by the Reconnect action to test phone -> PC
+     * reachability right now without touching the PC's clipboard.
+     * ClipboardServer's ProcessPush has no "ping" case, but it (and the
+     * caller around it) still writes the "ok" response unconditionally
+     * afterward, so no PC-side change was needed for this to already work.
+     */
+    suspend fun ping(device: PcDevice, timeoutMs: Int = 5000): PushResult = withContext(Dispatchers.IO) {
+        runCatching {
+            Socket(device.host, device.port).use { socket ->
+                socket.soTimeout = timeoutMs
+                val output = DataOutputStream(socket.getOutputStream())
+                val header = PushHeader(type = "ping", deviceName = Build.MODEL ?: "Android phone")
+                writeHeader(output, header)
+                readResponse(DataInputStream(socket.getInputStream()))
+            }
+        }.getOrElse {
+            android.util.Log.e("ClipboardBridge", "ping failed", it)
+            PushResult.Failed(it.message ?: "Connection failed")
+        }
+    }
+
     suspend fun pushImage(device: PcDevice, uri: Uri): PushResult = withContext(Dispatchers.IO) {
         runCatching {
             val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }

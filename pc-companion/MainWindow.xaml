@@ -352,6 +352,8 @@
                                             <Button Content="{Binding IsPrimary, Converter={StaticResource PrimaryButtonLabel}}"
                                                     Style="{StaticResource FlatButton}" Margin="0,0,6,0"
                                                     Click="OnTogglePrimaryClick" Tag="{Binding}"/>
+                                            <Button Content="Reconnect" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
+                                                    Click="OnReconnectPhoneClick" Tag="{Binding}"/>
                                             <Button Content="Rename" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
                                                     Click="OnRenameDeviceClick" Tag="{Binding}"/>
                                             <Button Content="Remove" Style="{StaticResource FlatButton}"
@@ -650,10 +652,11 @@
                 <CheckBox x:Name="LaunchAtStartupCheck" Content="Launch at Windows startup" Margin="0,0,0,18"/>
 
                 <TextBlock Text="AUTO-SEND TO PRIMARY PHONE" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,8"/>
-                <CheckBox x:Name="AutoSendImagesCheck" Content="Images" Margin="0,0,0,8"/>
+                <CheckBox x:Name="AutoSendImagesCheck" Content="Copy images to phone clipboard" Margin="0,0,0,8"/>
+                <CheckBox x:Name="SendImagesAsFileCheck" Content="Send images to phone as files" Margin="0,0,0,8"/>
                 <CheckBox x:Name="AutoSendTextCheck" Content="Text" Margin="0,0,0,8"/>
                 <CheckBox x:Name="AutoSendFilesCheck" Content="Files" Margin="0,0,0,4"/>
-                <TextBlock Text="All off by default - copying something sensitive (a password, etc.) won't be sent unless the matching toggle is on. Turn one on only while you actually want that live sync."
+                <TextBlock Text="All off by default - copying something sensitive (a password, etc.) won't be sent unless the matching toggle is on. Turn one on only while you actually want that live sync. If both image options are on, &quot;Send as files&quot; takes over for that copy."
                            Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
                 <TextBlock Text="RECEIVE FILES FROM PHONE" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,8"/>

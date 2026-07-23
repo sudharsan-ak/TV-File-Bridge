@@ -77,6 +77,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         MaxHistoryBox.Text = App.SettingsStore.Settings.MaxHistoryItems.ToString();
         LaunchAtStartupCheck.IsChecked = App.SettingsStore.Settings.LaunchAtStartup;
         AutoSendImagesCheck.IsChecked = App.SettingsStore.Settings.AutoSendImagesToPhone;
+        SendImagesAsFileCheck.IsChecked = App.SettingsStore.Settings.SendImagesAsFileToPhone;
         AutoSendTextCheck.IsChecked = App.SettingsStore.Settings.AutoSendTextToPhone;
         AutoSendFilesCheck.IsChecked = App.SettingsStore.Settings.AutoSendFilesToPhone;
 
@@ -426,6 +427,28 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         RefreshPairedDevices();
     }
 
+    /// <summary>
+    /// Restarts the local ClipboardServer (in case it's wedged) and sends a
+    /// no-op ping to this specific phone, reporting success/failure. There's
+    /// no persistent socket to "reconnect" in this protocol (every push opens
+    /// a fresh connection) - this just verifies PC -> phone reachability
+    /// right now and gives the local listener a clean restart along the way.
+    /// </summary>
+    private async void OnReconnectPhoneClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not PairedDevice device) return;
+        var button = sender as System.Windows.Controls.Button;
+        if (button != null) button.IsEnabled = false;
+
+        App.Server.Restart();
+        var reachable = await App.Watcher.PingAsync(device);
+
+        if (button != null) button.IsEnabled = true;
+        AppDialog.ShowInfo(
+            reachable ? $"Reconnected - {device.DeviceName} is reachable." : $"Couldn't reach {device.DeviceName}. Make sure its app is open and on the same Wi-Fi.",
+            "Reconnect");
+    }
+
     private void OnSaveSettingsClick(object sender, RoutedEventArgs e)
     {
         var settings = App.SettingsStore.Settings;
@@ -448,6 +471,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         settings.MaxHistoryItems = maxHistory;
         settings.LaunchAtStartup = LaunchAtStartupCheck.IsChecked == true;
         settings.AutoSendImagesToPhone = AutoSendImagesCheck.IsChecked == true;
+        settings.SendImagesAsFileToPhone = SendImagesAsFileCheck.IsChecked == true;
         settings.AutoSendTextToPhone = AutoSendTextCheck.IsChecked == true;
         settings.AutoSendFilesToPhone = AutoSendFilesCheck.IsChecked == true;
         settings.ReceiveFilesFromPhone = ReceiveFilesCheck.IsChecked == true;

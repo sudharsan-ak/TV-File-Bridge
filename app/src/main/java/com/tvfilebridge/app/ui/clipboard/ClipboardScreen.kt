@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.TextSnippet
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.tvfilebridge.app.AppContainer
@@ -59,6 +61,7 @@ import com.tvfilebridge.app.clipboard.ClipboardEntryDirection
 import com.tvfilebridge.app.clipboard.ClipboardSendEntry
 import com.tvfilebridge.app.clipboard.ClipboardSendStatus
 import com.tvfilebridge.app.clipboard.PcDevice
+import com.tvfilebridge.app.clipboard.PushResult
 import com.tvfilebridge.app.ui.nav.AppHeader
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -286,8 +289,11 @@ private fun DevicesSection(container: AppContainer) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(devices, key = { it.id }) { device ->
+            var isReconnecting by remember { mutableStateOf(false) }
+            val context = LocalContext.current
             PcDeviceRow(
                 device = device,
+                isReconnecting = isReconnecting,
                 onRename = { deviceToRename = device },
                 onDelete = { scope.launch { container.pcDeviceStore.deleteDevice(device.id) } },
                 onTogglePrimary = {
@@ -297,6 +303,18 @@ private fun DevicesSection(container: AppContainer) {
                         } else {
                             container.pcDeviceStore.setPrimary(device.id)
                         }
+                    }
+                },
+                onReconnect = {
+                    isReconnecting = true
+                    scope.launch {
+                        val result = container.clipboardBridge.ping(device)
+                        isReconnecting = false
+                        val message = when (result) {
+                            is PushResult.Success -> "Reconnected - ${device.name} is reachable."
+                            is PushResult.Failed -> "Couldn't reach ${device.name}. Make sure PC Companion is running and on the same Wi-Fi."
+                        }
+                        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                     }
                 },
             )
@@ -315,9 +333,11 @@ private fun DevicesSection(container: AppContainer) {
 @Composable
 private fun PcDeviceRow(
     device: PcDevice,
+    isReconnecting: Boolean,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onTogglePrimary: () -> Unit,
+    onReconnect: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -353,6 +373,13 @@ private fun PcDeviceRow(
                     contentDescription = if (device.isPrimary) "Unset as primary" else "Set as primary",
                     tint = if (device.isPrimary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            IconButton(onClick = onReconnect, enabled = !isReconnecting) {
+                if (isReconnecting) {
+                    androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Reconnect", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             IconButton(onClick = onRename) {
                 Icon(Icons.Filled.Edit, contentDescription = "Rename", tint = MaterialTheme.colorScheme.onSurfaceVariant)

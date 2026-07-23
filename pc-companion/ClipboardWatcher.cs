@@ -122,15 +122,40 @@ public class ClipboardWatcher : IDisposable
             Console.WriteLine($"[ClipboardWatcher] ContainsFileDropList={hasFileDrop} ContainsImage={hasImage} ContainsText={hasText}");
             if (hasFileDrop)
             {
-                if (!settings.AutoSendFilesToPhone)
-                {
-                    Console.WriteLine("[ClipboardWatcher] file auto-send is off, skipping");
-                    return;
-                }
                 var paths = Clipboard.GetFileDropList().Cast<string>().Where(File.Exists).ToList();
                 if (paths.Count == 0)
                 {
                     Console.WriteLine("[ClipboardWatcher] file drop list had no readable files");
+                    return;
+                }
+
+                // Explorer's Ctrl+C on a file always produces a file-drop-list,
+                // never raw clipboard image data - even for a .png/.jpg. Without
+                // this check, copying a single image FILE was gated only by the
+                // Files toggle, never the two image toggles below, which didn't
+                // match what "images" settings mean to a user copying a picture
+                // the normal way (via Explorer, not an in-app "copy image").
+                if (paths.Count == 1 && IsImageFile(paths[0]))
+                {
+                    if (settings.SendImagesAsFileToPhone)
+                    {
+                        Console.WriteLine($"[ClipboardWatcher] copied file is an image, sending as file to {primaryPhone.DeviceName}");
+                        _ = PushFileAsync(primaryPhone, paths[0]);
+                        return;
+                    }
+                    if (settings.AutoSendImagesToPhone)
+                    {
+                        Console.WriteLine($"[ClipboardWatcher] copied file is an image, pushing to clipboard on {primaryPhone.DeviceName}");
+                        _ = PushImageFileAsync(primaryPhone, paths[0]);
+                        return;
+                    }
+                    Console.WriteLine("[ClipboardWatcher] both image auto-send toggles are off, skipping copied image file");
+                    return;
+                }
+
+                if (!settings.AutoSendFilesToPhone)
+                {
+                    Console.WriteLine("[ClipboardWatcher] file auto-send is off, skipping");
                     return;
                 }
                 var totalBytes = paths.Sum(p => new FileInfo(p).Length);
@@ -142,9 +167,9 @@ public class ClipboardWatcher : IDisposable
             }
             else if (hasImage)
             {
-                if (!settings.AutoSendImagesToPhone)
+                if (!settings.SendImagesAsFileToPhone && !settings.AutoSendImagesToPhone)
                 {
-                    Console.WriteLine("[ClipboardWatcher] image auto-send is off, skipping");
+                    Console.WriteLine("[ClipboardWatcher] both image auto-send toggles are off, skipping");
                     return;
                 }
                 var image = Clipboard.GetImage();
@@ -154,6 +179,16 @@ public class ClipboardWatcher : IDisposable
                     return;
                 }
                 var bytes = EncodeAsPng(image);
+
+                if (settings.SendImagesAsFileToPhone)
+                {
+                    var tempPath = Path.Combine(Path.GetTempPath(), $"Clipboard Image {DateTime.Now:yyyy-MM-dd HH-mm-ss}.png");
+                    File.WriteAllBytes(tempPath, bytes);
+                    Console.WriteLine($"[ClipboardWatcher] encoded {bytes.Length} bytes, sending as file to {primaryPhone.DeviceName}");
+                    _ = PushFileAsync(primaryPhone, tempPath, deleteAfterSend: true);
+                    return;
+                }
+
                 Console.WriteLine($"[ClipboardWatcher] encoded {bytes.Length} bytes, pushing image to {primaryPhone.DeviceName}");
                 _ = PushImageAsync(primaryPhone, bytes);
             }
@@ -188,6 +223,27 @@ public class ClipboardWatcher : IDisposable
         }
     }
 
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",
+    };
+
+    private static bool IsImageFile(string path) => ImageExtensions.Contains(Path.GetExtension(path));
+
+    /// <summary>Same wire shape as PushImageAsync, reading the payload from a file on disk instead of the clipboard's raw bitmap.</summary>
+    private async Task PushImageFileAsync(PairedDevice device, string filePath)
+    {
+        try
+        {
+            var imageBytes = await File.ReadAllBytesAsync(filePath);
+            await PushImageAsync(device, imageBytes);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClipboardWatcher] image file push failed: {ex.Message}");
+        }
+    }
+
     private static string SaveImageToCache(byte[] imageBytes)
     {
         var cacheDir = Path.Combine(
@@ -206,6 +262,53 @@ public class ClipboardWatcher : IDisposable
         using var stream = new MemoryStream();
         encoder.Save(stream);
         return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Sends a no-op "ping" push and waits for the phone's ack - used by the
+    /// Reconnect action to test reachability without touching the phone's
+    /// clipboard. ClipboardReceiverServer's type switch has no "ping" case,
+    /// but its fallback still writes the "ok" response after the switch, so
+    /// no phone-side change was needed for this to already work.
+    /// </summary>
+    public async Task<bool> PingAsync(PairedDevice device, int timeoutMs = 5000)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            var connectTask = client.ConnectAsync(device.IpAddress, PhoneReceiverPort);
+            if (await Task.WhenAny(connectTask, Task.Delay(timeoutMs)) != connectTask) return false;
+            await connectTask;
+
+            var stream = client.GetStream();
+            stream.ReadTimeout = timeoutMs;
+            var header = JsonSerializer.Serialize(new { type = "ping", deviceName = _settingsStore.Settings.DeviceName });
+            await WriteFramedAsync(stream, header);
+
+            var lengthBytes = new byte[4];
+            if (!await ReadExactAsync(stream, lengthBytes)) return false;
+            var responseLength = BitConverter.ToInt32(lengthBytes, 0);
+            if (responseLength <= 0 || responseLength > 1_000_000) return false;
+            var responseBytes = new byte[responseLength];
+            return await ReadExactAsync(stream, responseBytes);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClipboardWatcher] ping failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static async Task<bool> ReadExactAsync(NetworkStream stream, byte[] buffer)
+    {
+        var offset = 0;
+        while (offset < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(offset, buffer.Length - offset));
+            if (read == 0) return false;
+            offset += read;
+        }
+        return true;
     }
 
     private async Task PushTextAsync(PairedDevice device, string text)
@@ -278,7 +381,7 @@ public class ClipboardWatcher : IDisposable
     /// peak memory constant regardless of file size, same reasoning as the
     /// phone-to-PC direction's PcFileTransferManager.
     /// </summary>
-    private async Task PushFileAsync(PairedDevice device, string filePath)
+    private async Task PushFileAsync(PairedDevice device, string filePath, bool deleteAfterSend = false)
     {
         var fileName = Path.GetFileName(filePath);
         var fileLength = new FileInfo(filePath).Length;
@@ -334,6 +437,13 @@ public class ClipboardWatcher : IDisposable
             _transferManager.Complete(transfer, PcTransferStatus.Failed, ex.Message);
             // Best-effort otherwise, same as PushTextAsync/PushImageAsync -
             // the phone may simply be unreachable.
+        }
+        finally
+        {
+            if (deleteAfterSend)
+            {
+                try { File.Delete(filePath); } catch { /* best-effort cleanup of a scratch temp file */ }
+            }
         }
     }
 

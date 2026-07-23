@@ -78,6 +78,15 @@ public class AppSettings
     public bool AutoSendTextToPhone { get; set; }
     public bool AutoSendFilesToPhone { get; set; }
 
+    // Separate from AutoSendImagesToPhone (which only puts the image on the
+    // phone's clipboard, paste-able but not saved anywhere) - this instead
+    // pushes a copied image as a real file transfer, same mechanism
+    // AutoSendFilesToPhone already uses, so it's saved to the phone and shows
+    // up in Transfers/History there. If both are on, this one takes
+    // precedence for a given copy (one push, not two) - mirrors the phone
+    // app's own Copy vs Copy-to-PC split for the reverse direction.
+    public bool SendImagesAsFileToPhone { get; set; }
+
     // Opposite direction: accepting files pushed FROM the phone (via its
     // Copy to PC share action) and where they get saved on this PC. Off by
     // default like the others - a file landing somewhere is a bigger deal
