@@ -1,6 +1,6 @@
 # TV File Bridge
 
-Companion suite bridging an Android phone, Windows PC, and Android TV over ADB. See [BUILD_SPEC.md](BUILD_SPEC.md) for architecture, decisions, and gotchas, or [GETTING_STARTED.md](GETTING_STARTED.md) to install and pair everything.
+Companion suite bridging an Android phone, Windows PC, and Android TV over ADB. See [BUILD_SPEC.md](BUILD_SPEC.md) for architecture and design decisions or [GETTING_STARTED.md](GETTING_STARTED.md) to install and pair everything.
 
 ## Screenshots
 
