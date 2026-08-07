@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Windows;
 using Application = System.Windows.Application;
 
@@ -5,6 +6,17 @@ namespace PcCompanion;
 
 public partial class App : Application
 {
+    // Both named kernel objects, scoped per-user (Local\) - the mutex detects
+    // whether an instance is already running, the event lets a second launch
+    // tell that instance to show its window instead of booting a whole new
+    // process (new TCP listener, new ADB client, full WPF startup) just to
+    // end up activating the same window.
+    private const string SingleInstanceMutexName = @"Local\PcCompanion.SingleInstance";
+    private const string ShowWindowEventName = @"Local\PcCompanion.ShowWindow";
+
+    private Mutex? _singleInstanceMutex;
+    private EventWaitHandle? _showWindowEvent;
+
     public SettingsStore SettingsStore { get; private set; } = null!;
     public ClipboardHistoryStore HistoryStore { get; private set; } = null!;
     public ClipboardServer Server { get; private set; } = null!;
@@ -16,6 +28,20 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        _singleInstanceMutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out var createdNew);
+        _showWindowEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowWindowEventName);
+        if (!createdNew)
+        {
+            // Another instance already owns the mutex - ask it to show its
+            // window instead of standing up a second full app instance.
+            _showWindowEvent.Set();
+            Shutdown();
+            return;
+        }
+
+        var thread = new Thread(WatchForShowWindowSignal) { IsBackground = true };
+        thread.Start();
 
         SettingsStore = new SettingsStore();
         HistoryStore = new ClipboardHistoryStore(SettingsStore);
@@ -31,6 +57,16 @@ public partial class App : Application
 
         _trayIcon = new TrayIconManager(this);
         _trayIcon.Show();
+
+        OpenMainWindow();
+    }
+
+    private void WatchForShowWindowSignal()
+    {
+        while (_showWindowEvent!.WaitOne())
+        {
+            Dispatcher.Invoke(OpenMainWindow);
+        }
     }
 
     private void RequestPairingApproval(string deviceLabel, Action<bool> onDecision)
@@ -54,9 +90,10 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        Server.Stop();
-        Watcher.Dispose();
-        _trayIcon.Dispose();
+        Server?.Stop();
+        Watcher?.Dispose();
+        _trayIcon?.Dispose();
+        _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }
 }

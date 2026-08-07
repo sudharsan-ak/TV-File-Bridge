@@ -29,7 +29,10 @@ public class TrayIconManager : IDisposable
         menu.Items.Add("Quit", null, (_, _) => QuitApp());
         _notifyIcon.ContextMenuStrip = menu;
 
-        _notifyIcon.DoubleClick += (_, _) => _app.OpenMainWindow();
+        _notifyIcon.MouseClick += (_, args) =>
+        {
+            if (args.Button == MouseButtons.Left) _app.OpenMainWindow();
+        };
     }
 
     public void Show() => _notifyIcon.Visible = true;
