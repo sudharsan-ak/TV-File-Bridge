@@ -51,7 +51,40 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     }
     public bool HasScreenViewError => !string.IsNullOrEmpty(ScreenViewError);
 
+    public bool IsTvConnectedForInstall => App.TvAdbClient.IsConnected;
+
+    private string? _apkInstallFileName;
+    public string? ApkInstallFileName
+    {
+        get => _apkInstallFileName;
+        set { _apkInstallFileName = value; OnPropertyChanged(nameof(ApkInstallFileName)); OnPropertyChanged(nameof(HasApkInstallStatus)); }
+    }
+    public bool HasApkInstallStatus => ApkInstallFileName != null;
+
+    private bool _isApkInstalling;
+    public bool IsApkInstalling
+    {
+        get => _isApkInstalling;
+        set { _isApkInstalling = value; OnPropertyChanged(nameof(IsApkInstalling)); }
+    }
+
+    private double _apkInstallProgress;
+    public double ApkInstallProgress
+    {
+        get => _apkInstallProgress;
+        set { _apkInstallProgress = value; OnPropertyChanged(nameof(ApkInstallProgress)); }
+    }
+
+    private string? _apkInstallStatusText;
+    public string? ApkInstallStatusText
+    {
+        get => _apkInstallStatusText;
+        set { _apkInstallStatusText = value; OnPropertyChanged(nameof(ApkInstallStatusText)); }
+    }
+
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
 
     private const string TvRootPath = "/sdcard";
     private string _tvCurrentPath = TvRootPath;
@@ -184,6 +217,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
             tv.IsConnected = App.TvAdbClient.IsConnected && App.TvAdbClient.ConnectedHost == tv.Host && App.TvAdbClient.ConnectedPort == tv.Port;
             SavedTvs.Add(tv);
         }
+        OnPropertyChanged(nameof(IsTvConnectedForInstall));
     }
 
     private void OnTvSectionDisconnectClick(object sender, RoutedEventArgs e)
@@ -279,6 +313,46 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         App.SettingsStore.Settings.SavedTvs.RemoveAll(t => t.Host == tv.Host && t.Port == tv.Port);
         App.SettingsStore.Save();
         RefreshSavedTvs();
+    }
+
+    private void OnNavToggleClick(object sender, RoutedEventArgs e)
+    {
+        var collapsed = NavColumn.Width.Value == 0;
+        NavColumn.Width = new GridLength(collapsed ? 150 : 0);
+        NavPanel.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
+        NavDivider.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void OnPickApkClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Android package (*.apk)|*.apk" };
+        if (dialog.ShowDialog() != true) return;
+
+        PickApkButton.IsEnabled = false;
+        ApkInstallFileName = Path.GetFileName(dialog.FileName);
+        IsApkInstalling = true;
+        ApkInstallProgress = 0;
+        ApkInstallStatusText = "Uploading…";
+
+        var result = await App.TvAdbClient.InstallApkAsync(dialog.FileName, args =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                ApkInstallProgress = args.UploadProgress;
+                ApkInstallStatusText = args.State switch
+                {
+                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.Preparing => "Preparing…",
+                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.Uploading => $"Uploading… {args.UploadProgress:0}%",
+                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.Installing => "Installing on TV…",
+                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.PostInstall => "Finishing up…",
+                    _ => ApkInstallStatusText,
+                };
+            });
+        });
+
+        IsApkInstalling = false;
+        PickApkButton.IsEnabled = true;
+        ApkInstallStatusText = result.IsSuccess ? "Installed successfully." : $"Install failed: {result.ErrorMessage}";
     }
 
     private void OnClearAllClick(object sender, RoutedEventArgs e)

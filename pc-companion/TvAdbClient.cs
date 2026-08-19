@@ -196,6 +196,28 @@ public class TvAdbClient
         }
     }
 
+    /// <summary>
+    /// `adb install -r` equivalent, straight from a local file - lets the app
+    /// sideload any picked APK onto the TV without first copying it into TV
+    /// storage, same as running `adb install` from a shell at the platform-tools
+    /// folder. `-r` matches the "safe to install again" behavior used
+    /// elsewhere (TvCompanionInstaller.install on the phone passes the same flag).
+    /// </summary>
+    public async Task<Result<Unit>> InstallApkAsync(string localApkPath, Action<InstallProgressEventArgs> onProgress)
+    {
+        if (_device is not { } device) return Result<Unit>.Failure("Not connected");
+        try
+        {
+            await using var stream = File.OpenRead(localApkPath);
+            await _client.InstallAsync(device, stream, onProgress, CancellationToken.None, "-r");
+            return Result<Unit>.Success(Unit.Value);
+        }
+        catch (Exception ex)
+        {
+            return Result<Unit>.Failure(ex.Message);
+        }
+    }
+
     public async Task<Result<Unit>> PushAsync(string localPath, string remoteDir)
     {
         if (_device is not { } device) return Result<Unit>.Failure("Not connected");
