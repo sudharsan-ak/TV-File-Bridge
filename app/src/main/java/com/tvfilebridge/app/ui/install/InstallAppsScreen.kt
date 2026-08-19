@@ -1,5 +1,8 @@
 package com.tvfilebridge.app.ui.install
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,12 +18,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,12 +41,42 @@ import androidx.compose.ui.unit.dp
 import com.tvfilebridge.app.AppContainer
 import com.tvfilebridge.app.cursor.TvCompanionInstaller
 import com.tvfilebridge.app.cursor.WatchdogInstaller
+import com.tvfilebridge.app.install.SideloadApkInstaller
 import com.tvfilebridge.app.ui.nav.AppHeader
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun InstallAppsScreen(container: AppContainer, contentPadding: PaddingValues, onMenuClick: () -> Unit) {
+    var isSideloading by remember { mutableStateOf(false) }
+    var sideloadProgress by remember { mutableStateOf<SideloadApkInstaller.Progress?>(null) }
+    var sideloadResultMessage by remember { mutableStateOf<String?>(null) }
+    var sideloadResultIsError by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    val pickApkLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        isSideloading = true
+        sideloadProgress = null
+        sideloadResultMessage = null
+        scope.launch {
+            val result = container.sideloadApkInstaller.install(uri) { progress -> sideloadProgress = progress }
+            isSideloading = false
+            sideloadProgress = null
+            if (result.isSuccess) {
+                sideloadResultIsError = false
+                sideloadResultMessage = "Installed"
+                delay(1500)
+                sideloadResultMessage = null
+            } else {
+                sideloadResultIsError = true
+                sideloadResultMessage = result.exceptionOrNull()?.message ?: "Install failed"
+                // Left showing until the next pick, not auto-cleared like a
+                // success toast - an error is worth reading, not blinking past.
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
         AppHeader(title = "Install apps for TV", onMenuClick = onMenuClick)
 
@@ -72,6 +107,89 @@ fun InstallAppsScreen(container: AppContainer, contentPadding: PaddingValues, on
                     icon = Icons.Filled.Shield,
                     install = { container.watchdogInstaller.install() },
                 )
+            }
+            item {
+                SideloadCard(
+                    isInstalling = isSideloading,
+                    progress = sideloadProgress,
+                    resultMessage = sideloadResultMessage,
+                    isError = sideloadResultIsError,
+                    onPick = { pickApkLauncher.launch("application/vnd.android.package-archive") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SideloadCard(
+    isInstalling: Boolean,
+    progress: SideloadApkInstaller.Progress?,
+    resultMessage: String?,
+    isError: Boolean,
+    onPick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !isInstalling) { onPick() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Icon(
+                Icons.Filled.InstallMobile,
+                contentDescription = null,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(10.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text("Sideload APK", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Pick any .apk on your phone and install it straight onto the TV.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                when {
+                    isInstalling && progress is SideloadApkInstaller.Progress.Uploading -> Column {
+                        val fraction = if (progress.totalBytes > 0) {
+                            (progress.bytesSent.toFloat() / progress.totalBytes).coerceIn(0f, 1f)
+                        } else 0f
+                        val percent = (fraction * 100).toInt()
+                        Text(
+                            "Uploading… $percent%",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                        )
+                    }
+                    isInstalling -> Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.height(16.dp), strokeWidth = 2.dp)
+                        Text("Installing on TV…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                    resultMessage != null -> Text(
+                        resultMessage,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    )
+                    else -> Text("Tap to choose a file", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
     }
