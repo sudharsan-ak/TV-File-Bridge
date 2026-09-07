@@ -101,7 +101,7 @@ public class ClipboardWatcher : IDisposable
     private void OnClipboardChanged()
     {
         var settings = _settingsStore.Settings;
-        if (!settings.AutoSendImagesToPhone && !settings.AutoSendTextToPhone && !settings.AutoSendFilesToPhone)
+        if (!settings.AutoSendImagesToPhone && !settings.AutoSendTextToPhone && !settings.AutoSendFilesToPhone && !settings.AutoSendFoldersToPhone)
         {
             Console.WriteLine("[ClipboardWatcher] all auto-send toggles are off, ignoring");
             return;
@@ -122,7 +122,31 @@ public class ClipboardWatcher : IDisposable
             Console.WriteLine($"[ClipboardWatcher] ContainsFileDropList={hasFileDrop} ContainsImage={hasImage} ContainsText={hasText}");
             if (hasFileDrop)
             {
-                var paths = Clipboard.GetFileDropList().Cast<string>().Where(File.Exists).ToList();
+                // Explorer's file-drop-list mixes files and folders together
+                // with no separate signal - a copied folder shows up here as
+                // a directory path, same list a copied file's path comes
+                // through. Split before the existing file-only filter below
+                // (which silently dropped folders until this branch existed)
+                // so a folder gets its own recursive-send path instead of
+                // just vanishing.
+                var dropPaths = Clipboard.GetFileDropList().Cast<string>().ToList();
+                var folderPaths = dropPaths.Where(Directory.Exists).ToList();
+                if (folderPaths.Count > 0)
+                {
+                    if (!settings.AutoSendFoldersToPhone)
+                    {
+                        Console.WriteLine("[ClipboardWatcher] folder auto-send is off, skipping");
+                        return;
+                    }
+                    Console.WriteLine($"[ClipboardWatcher] pushing {folderPaths.Count} folder(s) to {primaryPhone.DeviceName}");
+                    foreach (var folderPath in folderPaths)
+                    {
+                        _ = PushFolderAsync(primaryPhone, folderPath);
+                    }
+                    return;
+                }
+
+                var paths = dropPaths.Where(File.Exists).ToList();
                 if (paths.Count == 0)
                 {
                     Console.WriteLine("[ClipboardWatcher] file drop list had no readable files");
@@ -444,6 +468,113 @@ public class ClipboardWatcher : IDisposable
             {
                 try { File.Delete(filePath); } catch { /* best-effort cleanup of a scratch temp file */ }
             }
+        }
+    }
+
+    /// <summary>
+    /// Sends a whole folder as one connection: a "folder-start" header (name
+    /// + how many files follow), then each file as its own header (carrying
+    /// its path relative to the copied folder's root, so nested subfolders
+    /// survive) immediately followed by that file's raw bytes, then a
+    /// "folder-end" header. One connection rather than one PushFileAsync call
+    /// per file, so the phone can create the folder once up front and knows
+    /// when the whole batch is done, instead of guessing from N separate
+    /// unrelated "file" pushes.
+    /// </summary>
+    private async Task PushFolderAsync(PairedDevice device, string folderPath)
+    {
+        var folderName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        List<string> filePaths;
+        try
+        {
+            filePaths = Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClipboardWatcher] couldn't enumerate folder '{folderPath}': {ex.Message}");
+            return;
+        }
+        if (filePaths.Count == 0)
+        {
+            Console.WriteLine($"[ClipboardWatcher] folder '{folderPath}' has no files, skipping");
+            return;
+        }
+
+        var totalBytes = filePaths.Sum(p => new FileInfo(p).Length);
+        var transfer = _transferManager.StartSend(folderName, folderPath, device.DeviceName, totalBytes, out var cancellationToken);
+
+        try
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(device.IpAddress, PhoneReceiverPort, cancellationToken);
+            var stream = client.GetStream();
+
+            var startHeader = JsonSerializer.Serialize(new
+            {
+                type = "folder-start",
+                deviceName = _settingsStore.Settings.DeviceName,
+                fileName = folderName,
+            });
+            await WriteFramedAsync(stream, startHeader);
+
+            long sent = 0;
+            var buffer = new byte[FileStreamChunkSize];
+            foreach (var filePath in filePaths)
+            {
+                // Forward slashes regardless of this being Windows - the wire
+                // format is shared with the phone side, which builds SAF
+                // document paths segment by segment expecting '/'.
+                var relativePath = Path.GetRelativePath(folderPath, filePath).Replace('\\', '/');
+                var fileLength = new FileInfo(filePath).Length;
+
+                var fileHeader = JsonSerializer.Serialize(new
+                {
+                    type = "folder-file",
+                    deviceName = _settingsStore.Settings.DeviceName,
+                    fileName = relativePath,
+                    fileByteLength = fileLength,
+                });
+                await WriteFramedAsync(stream, fileHeader);
+
+                await using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                int read;
+                while ((read = await fileStream.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    await stream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    sent += read;
+                    _transferManager.ReportProgress(transfer, sent);
+                }
+            }
+
+            var endHeader = JsonSerializer.Serialize(new
+            {
+                type = "folder-end",
+                deviceName = _settingsStore.Settings.DeviceName,
+                fileName = folderName,
+            });
+            await WriteFramedAsync(stream, endHeader);
+            await stream.FlushAsync(cancellationToken);
+
+            Console.WriteLine($"[ClipboardWatcher] folder push succeeded: {folderName} ({filePaths.Count} file(s))");
+            _transferManager.Complete(transfer, PcTransferStatus.Succeeded);
+            _historyStore.Add(new ClipboardHistoryItem
+            {
+                Type = ClipboardItemType.File,
+                Direction = ClipboardItemDirection.Sent,
+                FileName = folderName,
+                FilePath = folderPath,
+                SourceDeviceName = device.DeviceName,
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine($"[ClipboardWatcher] folder push cancelled: {folderName}");
+            _transferManager.Complete(transfer, PcTransferStatus.Cancelled);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClipboardWatcher] folder push failed: {ex.Message}");
+            _transferManager.Complete(transfer, PcTransferStatus.Failed, ex.Message);
         }
     }
 

@@ -113,6 +113,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         SendImagesAsFileCheck.IsChecked = App.SettingsStore.Settings.SendImagesAsFileToPhone;
         AutoSendTextCheck.IsChecked = App.SettingsStore.Settings.AutoSendTextToPhone;
         AutoSendFilesCheck.IsChecked = App.SettingsStore.Settings.AutoSendFilesToPhone;
+        AutoSendFoldersCheck.IsChecked = App.SettingsStore.Settings.AutoSendFoldersToPhone;
 
         ReceiveFilesCheck.IsChecked = App.SettingsStore.Settings.ReceiveFilesFromPhone;
         ReceivedFilesFolderBox.Text = App.SettingsStore.Settings.ReceivedFilesFolder ?? "";
@@ -548,6 +549,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         settings.SendImagesAsFileToPhone = SendImagesAsFileCheck.IsChecked == true;
         settings.AutoSendTextToPhone = AutoSendTextCheck.IsChecked == true;
         settings.AutoSendFilesToPhone = AutoSendFilesCheck.IsChecked == true;
+        settings.AutoSendFoldersToPhone = AutoSendFoldersCheck.IsChecked == true;
         settings.ReceiveFilesFromPhone = ReceiveFilesCheck.IsChecked == true;
         settings.ReceivedFilesFolder = string.IsNullOrWhiteSpace(ReceivedFilesFolderBox.Text) ? null : ReceivedFilesFolderBox.Text;
         App.SettingsStore.Save();

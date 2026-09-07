@@ -78,6 +78,12 @@ public class AppSettings
     public bool AutoSendTextToPhone { get; set; }
     public bool AutoSendFilesToPhone { get; set; }
 
+    // Separate from AutoSendFilesToPhone - copying a folder in Explorer is a
+    // bigger, slower operation (recursive walk, many files, could be huge)
+    // than copying a single file, so it gets its own opt-in rather than being
+    // silently bundled into "Files" once that's turned on.
+    public bool AutoSendFoldersToPhone { get; set; }
+
     // Separate from AutoSendImagesToPhone (which only puts the image on the
     // phone's clipboard, paste-able but not saved anywhere) - this instead
     // pushes a copied image as a real file transfer, same mechanism

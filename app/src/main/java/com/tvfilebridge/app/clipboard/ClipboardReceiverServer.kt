@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +32,7 @@ private const val STREAM_CHUNK_SIZE = 64 * 1024
 
 @Serializable
 private data class IncomingPushHeader(
-    val type: String, // "text", "image", or "file"
+    val type: String, // "text", "image", "file", or "folder-start"/"folder-file"/"folder-end"
     val deviceName: String = "",
     val text: String? = null,
     val imageByteLength: Int = 0,
@@ -104,69 +105,27 @@ class ClipboardReceiverServer(
                 val input = socket.getInputStream()
                 val output = socket.getOutputStream()
 
-                val lengthBytes = ByteArray(4)
-                if (!readExact(input, lengthBytes)) return@withContext
-                val headerLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).int
-                if (headerLength <= 0 || headerLength > 1_000_000) return@withContext
+                // Every existing message type (text/image/file) is a single
+                // header+payload then done - reading just one iteration below
+                // reproduces that exactly. "folder-start" is the only type
+                // that keeps this loop going, for as many "folder-file"
+                // headers as the PC side sends before "folder-end" closes it
+                // out - all on the one connection, so the destination folder
+                // only needs finding/creating once per batch instead of once
+                // per file.
+                var folderState: FolderReceiveState? = null
+                while (true) {
+                    val lengthBytes = ByteArray(4)
+                    if (!readExact(input, lengthBytes)) break
+                    val headerLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).int
+                    if (headerLength <= 0 || headerLength > 1_000_000) break
 
-                val headerBytes = ByteArray(headerLength)
-                if (!readExact(input, headerBytes)) return@withContext
-                val header = json.decodeFromString<IncomingPushHeader>(String(headerBytes, Charsets.UTF_8))
+                    val headerBytes = ByteArray(headerLength)
+                    if (!readExact(input, headerBytes)) break
+                    val header = json.decodeFromString<IncomingPushHeader>(String(headerBytes, Charsets.UTF_8))
 
-                when (header.type) {
-                    "text" -> {
-                        val text = header.text ?: return@withContext
-                        val clipboardManager = context.getSystemService(ClipboardManager::class.java)
-                        clipboardManager.setPrimaryClip(ClipData.newPlainText("Clipboard", text))
-                        Log.i(TAG, "set clipboard text from ${header.deviceName}")
-                        clipboardSendLog.record(
-                            ClipboardSendEntry(
-                                direction = ClipboardEntryDirection.RECEIVED,
-                                kind = ClipboardContentKind.TEXT,
-                                textPreview = text,
-                                targetDeviceName = header.deviceName,
-                                status = ClipboardSendStatus.SUCCESS,
-                            ),
-                        )
-                    }
-                    "image" -> {
-                        if (header.imageByteLength <= 0) return@withContext
-                        val imageBytes = ByteArray(header.imageByteLength)
-                        if (!readExact(input, imageBytes)) return@withContext
-                        val uri = saveImageToCacheAndGetUri(imageBytes) ?: return@withContext
-                        val clipboardManager = context.getSystemService(ClipboardManager::class.java)
-                        val clip = ClipData.newUri(context.contentResolver, "Image", uri)
-                        clipboardManager.setPrimaryClip(clip)
-                        Log.i(TAG, "set clipboard image from ${header.deviceName}")
-                        clipboardSendLog.record(
-                            ClipboardSendEntry(
-                                direction = ClipboardEntryDirection.RECEIVED,
-                                kind = ClipboardContentKind.IMAGE,
-                                imageUri = uri,
-                                targetDeviceName = header.deviceName,
-                                status = ClipboardSendStatus.SUCCESS,
-                            ),
-                        )
-                    }
-                    "file" -> {
-                        val fileName = header.fileName
-                        if (fileName.isNullOrBlank() || header.fileByteLength <= 0) return@withContext
-                        val uri = receiveFileStreamed(input, fileName, header.fileByteLength, header.deviceName) ?: return@withContext
-                        val clipboardManager = context.getSystemService(ClipboardManager::class.java)
-                        val clip = ClipData.newUri(context.contentResolver, fileName, uri)
-                        clipboardManager.setPrimaryClip(clip)
-                        Log.i(TAG, "saved incoming file '$fileName' from ${header.deviceName}")
-                        clipboardSendLog.record(
-                            ClipboardSendEntry(
-                                direction = ClipboardEntryDirection.RECEIVED,
-                                kind = ClipboardContentKind.FILE,
-                                fileName = fileName,
-                                fileUri = uri,
-                                targetDeviceName = header.deviceName,
-                                status = ClipboardSendStatus.SUCCESS,
-                            ),
-                        )
-                    }
+                    val shouldContinue = handleMessage(header, input, folderState) { folderState = it }
+                    if (!shouldContinue) break
                 }
 
                 val responseBytes = "ok".toByteArray(Charsets.UTF_8)
@@ -176,6 +135,186 @@ class ClipboardReceiverServer(
             } catch (e: Exception) {
                 Log.e(TAG, "client error: ${e.message}")
             }
+        }
+    }
+
+    /** Holds the destination folder while a folder-start/.../folder-end batch is in progress. */
+    private class FolderReceiveState(val root: DocumentFile, val folderName: String, val deviceName: String, var fileCount: Int = 0)
+
+    /** Returns true if the connection should keep reading more headers (mid-folder-batch), false once done. */
+    private suspend fun handleMessage(
+        header: IncomingPushHeader,
+        input: java.io.InputStream,
+        folderState: FolderReceiveState?,
+        setFolderState: (FolderReceiveState?) -> Unit,
+    ): Boolean {
+        when (header.type) {
+            "text" -> {
+                val text = header.text ?: return false
+                val clipboardManager = context.getSystemService(ClipboardManager::class.java)
+                clipboardManager.setPrimaryClip(ClipData.newPlainText("Clipboard", text))
+                Log.i(TAG, "set clipboard text from ${header.deviceName}")
+                clipboardSendLog.record(
+                    ClipboardSendEntry(
+                        direction = ClipboardEntryDirection.RECEIVED,
+                        kind = ClipboardContentKind.TEXT,
+                        textPreview = text,
+                        targetDeviceName = header.deviceName,
+                        status = ClipboardSendStatus.SUCCESS,
+                    ),
+                )
+                return false
+            }
+            "image" -> {
+                if (header.imageByteLength <= 0) return false
+                val imageBytes = ByteArray(header.imageByteLength)
+                if (!readExact(input, imageBytes)) return false
+                val uri = saveImageToCacheAndGetUri(imageBytes) ?: return false
+                val clipboardManager = context.getSystemService(ClipboardManager::class.java)
+                val clip = ClipData.newUri(context.contentResolver, "Image", uri)
+                clipboardManager.setPrimaryClip(clip)
+                Log.i(TAG, "set clipboard image from ${header.deviceName}")
+                clipboardSendLog.record(
+                    ClipboardSendEntry(
+                        direction = ClipboardEntryDirection.RECEIVED,
+                        kind = ClipboardContentKind.IMAGE,
+                        imageUri = uri,
+                        targetDeviceName = header.deviceName,
+                        status = ClipboardSendStatus.SUCCESS,
+                    ),
+                )
+                return false
+            }
+            "file" -> {
+                val fileName = header.fileName
+                if (fileName.isNullOrBlank() || header.fileByteLength <= 0) return false
+                val uri = receiveFileStreamed(input, fileName, header.fileByteLength, header.deviceName) ?: return false
+                val clipboardManager = context.getSystemService(ClipboardManager::class.java)
+                val clip = ClipData.newUri(context.contentResolver, fileName, uri)
+                clipboardManager.setPrimaryClip(clip)
+                Log.i(TAG, "saved incoming file '$fileName' from ${header.deviceName}")
+                clipboardSendLog.record(
+                    ClipboardSendEntry(
+                        direction = ClipboardEntryDirection.RECEIVED,
+                        kind = ClipboardContentKind.FILE,
+                        fileName = fileName,
+                        fileUri = uri,
+                        targetDeviceName = header.deviceName,
+                        status = ClipboardSendStatus.SUCCESS,
+                    ),
+                )
+                return false
+            }
+            "folder-start" -> {
+                val folderName = header.fileName
+                if (folderName.isNullOrBlank()) return false
+                val root = openReceiveRoot()
+                if (root == null) {
+                    Log.e(TAG, "folder-start: no writable destination folder available")
+                    return false
+                }
+                // Reuse an existing same-named folder rather than always
+                // making a new one (Explorer's own copy-again behavior) -
+                // findFile() first so re-syncing the same folder doesn't pile
+                // up "Trip Photos", "Trip Photos (1)", etc. on repeat sends.
+                val folderDoc = root.findFile(folderName)?.takeIf { it.isDirectory }
+                    ?: root.createDirectory(folderName)
+                if (folderDoc == null) {
+                    Log.e(TAG, "folder-start: couldn't create folder '$folderName'")
+                    return false
+                }
+                setFolderState(FolderReceiveState(folderDoc, folderName, header.deviceName))
+                Log.i(TAG, "folder-start '$folderName' from ${header.deviceName}")
+                return true
+            }
+            "folder-file" -> {
+                val relativePath = header.fileName
+                if (relativePath.isNullOrBlank() || header.fileByteLength <= 0 || folderState == null) return false
+                val uri = receiveFileIntoFolder(input, folderState.root, relativePath, header.fileByteLength)
+                if (uri != null) folderState.fileCount++
+                return true
+            }
+            "folder-end" -> {
+                if (folderState != null) {
+                    Log.i(TAG, "folder-end '${folderState.folderName}': ${folderState.fileCount} file(s) from ${folderState.deviceName}")
+                    clipboardSendLog.record(
+                        ClipboardSendEntry(
+                            direction = ClipboardEntryDirection.RECEIVED,
+                            kind = ClipboardContentKind.FILE,
+                            fileName = folderState.folderName,
+                            fileUri = folderState.root.uri,
+                            targetDeviceName = folderState.deviceName,
+                            status = ClipboardSendStatus.SUCCESS,
+                        ),
+                    )
+                }
+                return false
+            }
+            else -> return false
+        }
+    }
+
+    /** Same destination the plain "file" case uses (configured Save location, or Downloads) - as a DocumentFile so folders can be found/created under it. */
+    private suspend fun openReceiveRoot(): DocumentFile? {
+        val folderUriString = receivedFilesFolderStore.folderUri.first() ?: return null
+        return DocumentFile.fromTreeUri(context, Uri.parse(folderUriString))
+    }
+
+    /**
+     * Creates (or reuses) every folder segment in [relativePath] under [root]
+     * - the file's own directory, e.g. "Day 1/photo.jpg" under a "Trip
+     * Photos" root creates/reuses "Day 1" first - then streams the file into
+     * the final segment. Mirrors receiveFileStreamed's streaming approach,
+     * just targeting a caller-supplied tree instead of always the root.
+     */
+    private fun receiveFileIntoFolder(input: java.io.InputStream, root: DocumentFile, relativePath: String, totalBytes: Long): Uri? {
+        val segments = relativePath.split('/').filter { it.isNotBlank() }
+        if (segments.isEmpty()) return null
+
+        var dir = root
+        for (folderName in segments.dropLast(1)) {
+            dir = dir.findFile(folderName)?.takeIf { it.isDirectory }
+                ?: dir.createDirectory(folderName)
+                ?: run {
+                    Log.e(TAG, "receiveFileIntoFolder: couldn't create subfolder '$folderName'")
+                    return null
+                }
+        }
+        val fileName = segments.last()
+        // Same overwrite-by-replace approach as a repeat top-level folder
+        // sync: delete any existing file with this name first rather than
+        // leaving stale duplicates or silently failing createFile.
+        dir.findFile(fileName)?.delete()
+        val fileDoc = dir.createFile(guessMimeType(fileName), fileName) ?: return null
+
+        val output = try {
+            context.contentResolver.openOutputStream(fileDoc.uri)
+        } catch (e: Exception) {
+            Log.e(TAG, "couldn't open output stream for $fileName: ${e.message}")
+            null
+        }
+        if (output == null) {
+            runCatching { fileDoc.delete() }
+            return null
+        }
+
+        return try {
+            output.use { out ->
+                val buffer = ByteArray(STREAM_CHUNK_SIZE)
+                var remaining = totalBytes
+                while (remaining > 0) {
+                    val toRead = minOf(buffer.size.toLong(), remaining).toInt()
+                    val read = input.read(buffer, 0, toRead)
+                    if (read == -1) throw java.io.IOException("Connection closed before all file bytes arrived")
+                    out.write(buffer, 0, read)
+                    remaining -= read
+                }
+            }
+            fileDoc.uri
+        } catch (e: Exception) {
+            Log.e(TAG, "folder file receive failed ($relativePath): ${e.message}")
+            runCatching { fileDoc.delete() }
+            null
         }
     }
 

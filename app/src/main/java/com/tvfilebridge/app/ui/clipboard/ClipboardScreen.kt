@@ -509,7 +509,7 @@ private fun FileSharingSection(container: AppContainer) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "When \"Files\" auto-send is turned on in the PC companion app's settings, copying a file in Windows Explorer (Ctrl+C) sends it here automatically.",
+            "When \"Files\" auto-send is turned on in the PC companion app's settings, copying a file in Windows Explorer (Ctrl+C) sends it here automatically. Turning on \"Folders\" there does the same for a copied folder - it's recreated here with all its subfolders.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
