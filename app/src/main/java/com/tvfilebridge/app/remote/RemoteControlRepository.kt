@@ -29,6 +29,20 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
     }
 
     /**
+     * Opens the TV's own system Settings, not this app's - there's no
+     * KEYCODE_SETTINGS equivalent that reliably does this on Android TV (most
+     * launchers don't map it to anything), so this goes through the standard
+     * android.settings.SETTINGS intent action via `am start` instead of a
+     * keyevent, the same way launchApp already uses a shell command rather
+     * than a key for opening something specific.
+     */
+    suspend fun openTvSettings(): Result<Unit> {
+        val result = connectionManager.withDadb { dadb -> dadb.shell("am start -a android.settings.SETTINGS") }
+        result.exceptionOrNull()?.let { Log.e(TAG, "openTvSettings failed: ${it.message}", it) }
+        return result.map { }
+    }
+
+    /**
      * Taps at an absolute screen coordinate via the same `input tap` shell
      * command the D-pad's keyevents already use reliably. Cursor-mode clicks
      * route through here rather than the companion app's AccessibilityService

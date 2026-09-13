@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.VolumeOff
@@ -236,6 +237,9 @@ private fun CompactDPadBlock(viewModel: RemoteViewModel) {
                 }
                 RemoteIconButton(icon = Icons.Filled.PowerSettingsNew, contentDescription = "Power", size = 40.dp) {
                     viewModel.sendKeyEvent(AndroidKeyCode.POWER)
+                }
+                RemoteIconButton(icon = Icons.Filled.Settings, contentDescription = "TV settings", size = 40.dp) {
+                    viewModel.openTvSettings()
                 }
             }
 

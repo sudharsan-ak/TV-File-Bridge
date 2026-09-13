@@ -246,6 +246,10 @@ class RemoteViewModel(
         viewModelScope.launch { remoteControlRepository.keyEvent(code) }
     }
 
+    fun openTvSettings() {
+        viewModelScope.launch { remoteControlRepository.openTvSettings() }
+    }
+
     private var lastSentText: String = ""
     private var textSyncJob: Job? = null
 
