@@ -8,6 +8,14 @@ import com.tvfilebridge.app.AppContainer
 class SettingsViewModelFactory(private val container: AppContainer) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
         @Suppress("UNCHECKED_CAST")
-        return SettingsViewModel(container.connectionManager, container.deviceStore, container.tvDiscovery, container.remoteControlRepository, container.tvCompanionInstaller) as T
+        return SettingsViewModel(
+            container.connectionManager,
+            container.deviceStore,
+            container.tvDiscovery,
+            container.remoteControlRepository,
+            container.tvCompanionInstaller,
+            container.wakeScheduleStore,
+            container.wakeAlarmScheduler,
+        ) as T
     }
 }

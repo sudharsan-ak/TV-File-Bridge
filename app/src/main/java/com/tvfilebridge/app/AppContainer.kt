@@ -66,6 +66,9 @@ class AppContainer(val appContext: Context) {
     val fabPositionStore = FabPositionStore(appContext)
     val sonyAuthStore = com.tvfilebridge.app.remote.SonyAuthStore(appContext)
     val sonyIrccWaker = com.tvfilebridge.app.remote.SonyIrccWaker(sonyAuthStore)
+    val wakeScheduleStore = com.tvfilebridge.app.data.WakeScheduleStore(appContext)
+    val wakeAlarmScheduler = com.tvfilebridge.app.remote.WakeAlarmScheduler(appContext)
+    val sonyAuthRefreshScheduler = com.tvfilebridge.app.remote.SonyAuthRefreshScheduler(appContext)
     val tvScreenshotSaver = com.tvfilebridge.app.remote.TvScreenshotSaver(appContext, remoteControlRepository, receivedFilesFolderStore)
     val pcScreenshotRequester = com.tvfilebridge.app.clipboard.PcScreenshotRequester(appContext, receivedFilesFolderStore)
     val mirrorSessionManager = com.tvfilebridge.app.mirror.MirrorSessionManager(appContext, connectionManager)
@@ -74,6 +77,11 @@ class AppContainer(val appContext: Context) {
 
     init {
         autoConnectToLastActiveDevice()
+        // setInexactRepeating is idempotent against the same PendingIntent,
+        // so calling this on every process start is fine - it doesn't reset
+        // the existing schedule's timer, just ensures one exists at all
+        // (e.g. after a fresh install, before BootCompletedReceiver ever runs).
+        sonyAuthRefreshScheduler.ensureScheduled()
         // Started here, not just from ConnectionForegroundService, so PC ->
         // phone clipboard pushes work whenever the app process is alive at
         // all (opened, even if not currently in the foreground) - not only

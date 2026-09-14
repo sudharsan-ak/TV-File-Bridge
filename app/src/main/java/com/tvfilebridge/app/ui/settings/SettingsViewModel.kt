@@ -10,9 +10,12 @@ import com.tvfilebridge.app.cursor.TV_COMPANION_ACCESSIBILITY_SERVICE
 import com.tvfilebridge.app.cursor.TvCompanionInstaller
 import com.tvfilebridge.app.data.DeviceStore
 import com.tvfilebridge.app.data.SavedDevice
+import com.tvfilebridge.app.data.WakeSchedule
+import com.tvfilebridge.app.data.WakeScheduleStore
 import com.tvfilebridge.app.discovery.DiscoveredDevice
 import com.tvfilebridge.app.discovery.TvDiscovery
 import com.tvfilebridge.app.remote.RemoteControlRepository
+import com.tvfilebridge.app.remote.WakeAlarmScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +32,7 @@ data class SettingsUiState(
     // and a Fire Stick can each show "Connected" here at once, independent
     // of which one is active (connectionState/connectionManager.state).
     val connectionStates: Map<String, ConnectionState> = emptyMap(),
+    val wakeSchedules: List<WakeSchedule> = emptyList(),
 )
 
 data class DiscoveryUiState(
@@ -43,6 +47,8 @@ class SettingsViewModel(
     private val tvDiscovery: TvDiscovery,
     private val remoteControlRepository: RemoteControlRepository,
     private val tvCompanionInstaller: TvCompanionInstaller,
+    private val wakeScheduleStore: WakeScheduleStore,
+    private val wakeAlarmScheduler: WakeAlarmScheduler,
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -50,9 +56,41 @@ class SettingsViewModel(
         deviceStore.activeDeviceId,
         connectionManager.state,
         connectionManager.connectionsState,
-    ) { devices, activeId, connectionState, connectionStates ->
-        SettingsUiState(devices, activeId, connectionState, connectionStates)
+        wakeScheduleStore.schedules,
+    ) { devices, activeId, connectionState, connectionStates, wakeSchedules ->
+        SettingsUiState(devices, activeId, connectionState, connectionStates, wakeSchedules)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
+
+    fun canScheduleExactAlarms(): Boolean = wakeAlarmScheduler.canScheduleExactAlarms()
+
+    fun addWakeScheduleGroup(daysOfWeek: Set<Int>, hour: Int, minute: Int) {
+        viewModelScope.launch {
+            val newSchedules = wakeScheduleStore.addGroup(daysOfWeek, hour, minute)
+            newSchedules.forEach { wakeAlarmScheduler.schedule(it) }
+        }
+    }
+
+    fun setWakeScheduleGroupEnabled(groupId: String, currentRows: List<WakeSchedule>, enabled: Boolean) {
+        viewModelScope.launch {
+            wakeScheduleStore.setGroupEnabled(groupId, enabled)
+            currentRows.forEach { wakeAlarmScheduler.schedule(it.copy(enabled = enabled)) }
+        }
+    }
+
+    fun updateWakeScheduleGroup(groupId: String, oldRows: List<WakeSchedule>, daysOfWeek: Set<Int>, hour: Int, minute: Int) {
+        viewModelScope.launch {
+            oldRows.forEach { wakeAlarmScheduler.cancel(it.id) }
+            val newSchedules = wakeScheduleStore.replaceGroup(groupId, daysOfWeek, hour, minute)
+            newSchedules.forEach { wakeAlarmScheduler.schedule(it) }
+        }
+    }
+
+    fun deleteWakeScheduleGroup(groupId: String, rows: List<WakeSchedule>) {
+        viewModelScope.launch {
+            rows.forEach { wakeAlarmScheduler.cancel(it.id) }
+            wakeScheduleStore.deleteGroup(groupId)
+        }
+    }
 
     private val _discoveryState = MutableStateFlow(DiscoveryUiState())
     val discoveryState: StateFlow<DiscoveryUiState> = _discoveryState.asStateFlow()

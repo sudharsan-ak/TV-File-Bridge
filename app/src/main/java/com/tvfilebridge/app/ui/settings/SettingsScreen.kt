@@ -22,12 +22,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,12 +38,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,6 +61,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tvfilebridge.app.R
 import com.tvfilebridge.app.connection.ConnectionState
 import com.tvfilebridge.app.data.SavedDevice
+import com.tvfilebridge.app.data.WakeSchedule
 import com.tvfilebridge.app.discovery.DiscoveredDevice
 import com.tvfilebridge.app.AppContainer
 import com.tvfilebridge.app.ui.nav.AppHeader
@@ -65,22 +75,52 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModelFactory(container))
-    val uiState by viewModel.uiState.collectAsState()
-    var showAddDialog by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     Column(modifier = modifier.fillMaxSize().padding(contentPadding)) {
         AppHeader(title = "Settings", onMenuClick = onMenuClick)
+        TabRow(selectedTabIndex = selectedTab) {
+            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("General") })
+            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Devices") })
+            Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Scheduler") })
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            when (selectedTab) {
+                0 -> GeneralTab()
+                1 -> DevicesTab(viewModel = viewModel)
+                else -> SchedulerTab(viewModel = viewModel)
+            }
+        }
+    }
+}
 
-        Scaffold(
-            modifier = Modifier.fillMaxWidth(),
-            floatingActionButton = {
-                ExtendedFloatingActionButton(
-                    onClick = { showAddDialog = true },
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text("Add TV") },
-                )
-            },
-        ) { innerPadding ->
+@Composable
+private fun GeneralTab(modifier: Modifier = Modifier) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { BatteryOptimizationCard() }
+        item { QuickSettingsTileCard() }
+    }
+}
+
+@Composable
+private fun DevicesTab(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
+    val uiState by viewModel.uiState.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    Scaffold(
+        modifier = modifier.fillMaxWidth(),
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { showAddDialog = true },
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("Add TV") },
+            )
+        },
+    ) { innerPadding ->
         if (uiState.devices.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
@@ -110,12 +150,6 @@ fun SettingsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item {
-                    BatteryOptimizationCard()
-                }
-                item {
-                    QuickSettingsTileCard()
-                }
                 items(uiState.devices, key = { it.id }) { device ->
                     DeviceCard(
                         device = device,
@@ -128,7 +162,6 @@ fun SettingsScreen(
                     )
                 }
             }
-        }
         }
     }
 
@@ -551,4 +584,257 @@ private fun DiscoverySection(
 
         Spacer(Modifier.height(8.dp))
     }
+}
+
+private val DAY_LABELS = listOf("M", "T", "W", "T", "F", "S", "S")
+private val DAY_SHORT_NAMES = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+/** One card per group of WakeSchedule rows sharing a groupId - what the UI treats as a single multi-day schedule. */
+private data class WakeScheduleGroup(val groupId: String, val rows: List<WakeSchedule>) {
+    val hour get() = rows.first().hour
+    val minute get() = rows.first().minute
+    val enabled get() = rows.first().enabled
+    val daysOfWeek get() = rows.map { it.dayOfWeek }.toSet()
+}
+
+@Composable
+private fun SchedulerTab(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
+    val uiState by viewModel.uiState.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editingGroup by remember { mutableStateOf<WakeScheduleGroup?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val groups = remember(uiState.wakeSchedules) {
+        uiState.wakeSchedules
+            .groupBy { it.groupId }
+            .map { (groupId, rows) -> WakeScheduleGroup(groupId, rows) }
+            .sortedWith(compareBy({ it.hour }, { it.minute }))
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxWidth(),
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    if (viewModel.canScheduleExactAlarms()) {
+                        showAddDialog = true
+                    } else {
+                        val intent = android.content.Intent(
+                            android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            android.net.Uri.parse("package:${context.packageName}"),
+                        )
+                        context.startActivity(intent)
+                    }
+                },
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("Add schedule") },
+            )
+        },
+    ) { innerPadding ->
+        if (groups.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Filled.Tv,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text("No wake schedules yet", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Add a schedule to have your phone wake the active TV at a set time every week, even from the background.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(groups, key = { it.groupId }) { group ->
+                    WakeScheduleCard(
+                        group = group,
+                        onClick = { editingGroup = group },
+                        onToggle = { enabled -> viewModel.setWakeScheduleGroupEnabled(group.groupId, group.rows, enabled) },
+                        onDelete = { viewModel.deleteWakeScheduleGroup(group.groupId, group.rows) },
+                    )
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        WakeScheduleDialog(
+            title = "Add wake schedule",
+            initialDays = setOf(java.time.LocalDate.now().dayOfWeek.value),
+            initialHour = java.time.LocalTime.now().hour,
+            initialMinute = java.time.LocalTime.now().minute,
+            onDismiss = { showAddDialog = false },
+            onConfirm = { days, hour, minute ->
+                viewModel.addWakeScheduleGroup(days, hour, minute)
+                showAddDialog = false
+            },
+        )
+    }
+
+    editingGroup?.let { group ->
+        WakeScheduleDialog(
+            title = "Edit wake schedule",
+            initialDays = group.daysOfWeek,
+            initialHour = group.hour,
+            initialMinute = group.minute,
+            onDismiss = { editingGroup = null },
+            onConfirm = { days, hour, minute ->
+                viewModel.updateWakeScheduleGroup(group.groupId, group.rows, days, hour, minute)
+                editingGroup = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun WakeScheduleCard(
+    group: WakeScheduleGroup,
+    onClick: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val daysLabel = remember(group.daysOfWeek) {
+        when {
+            group.daysOfWeek == setOf(1, 2, 3, 4, 5) -> "Every weekday"
+            group.daysOfWeek == setOf(6, 7) -> "Weekends"
+            group.daysOfWeek.size == 7 -> "Every day"
+            else -> group.daysOfWeek.sorted().joinToString(", ") { DAY_SHORT_NAMES[it - 1] }
+        }
+    }
+    Card(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("%02d:%02d".format(group.hour, group.minute), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    daysLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = group.enabled, onCheckedChange = onToggle)
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/**
+ * Recurring weekly, Samsung Clock-style: a time (dial, with a keyboard-entry
+ * toggle) plus weekday chips - any combination of days, fires every week on
+ * each selected day until turned off or deleted. No calendar date involved,
+ * so there's nothing here that can be "in the past" the way a specific date
+ * could - the alarm scheduler already only arms the next future occurrence
+ * of whichever days are picked.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WakeScheduleDialog(
+    title: String,
+    initialDays: Set<Int>,
+    initialHour: Int,
+    initialMinute: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (days: Set<Int>, hour: Int, minute: Int) -> Unit,
+) {
+    val selectedDays = remember { androidx.compose.runtime.mutableStateListOf(*initialDays.toTypedArray()) }
+    var useKeyboardInput by remember { mutableStateOf(false) }
+    val timePickerState = rememberTimePickerState(
+        initialHour = initialHour,
+        initialMinute = initialMinute,
+        is24Hour = false,
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    IconButton(onClick = { useKeyboardInput = !useKeyboardInput }) {
+                        Icon(
+                            if (useKeyboardInput) Icons.Filled.Schedule else Icons.Filled.Keyboard,
+                            contentDescription = if (useKeyboardInput) "Switch to dial input" else "Switch to keyboard input",
+                        )
+                    }
+                }
+                if (useKeyboardInput) {
+                    androidx.compose.material3.TimeInput(state = timePickerState)
+                } else {
+                    TimePicker(state = timePickerState)
+                }
+
+                Text(
+                    "Repeat on",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DAY_LABELS.forEachIndexed { index, label ->
+                        val dayOfWeek = index + 1
+                        val isSelected = dayOfWeek in selectedDays
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                                .clickable {
+                                    if (isSelected) selectedDays.remove(dayOfWeek) else selectedDays.add(dayOfWeek)
+                                }
+                                .size(36.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(selectedDays.toSet(), timePickerState.hour, timePickerState.minute) },
+                enabled = selectedDays.isNotEmpty(),
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
