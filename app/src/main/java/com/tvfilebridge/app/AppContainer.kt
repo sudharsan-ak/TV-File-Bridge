@@ -99,7 +99,7 @@ class AppContainer(val appContext: Context) {
             val device = deviceStore.devices.first().find { it.id == activeId } ?: return@launch
             // Silent: a failed attempt just leaves connection state as Failed,
             // surfaced ambiently rather than blocking app startup (spec §5.1).
-            val success = connectionManager.connectSuspending(device.host, device.port)
+            val success = connectionManager.connectSuspending(device.id, device.host, device.port)
             if (success) {
                 deviceStore.markConnected(device.id)
                 if (device.macAddress == null) {

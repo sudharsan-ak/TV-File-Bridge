@@ -56,10 +56,13 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -111,6 +114,7 @@ fun RemoteScreen(
 ) {
     val viewModel: RemoteViewModel = viewModel(factory = RemoteViewModelFactory(container))
     val connectionState by viewModel.connectionState.collectAsState()
+    val connectedDevices by viewModel.connectedDevices.collectAsState()
     var section by remember { mutableStateOf(RemoteSection.REMOTE) }
 
     Column(
@@ -118,6 +122,16 @@ fun RemoteScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         com.tvfilebridge.app.ui.nav.AppHeader(title = "Remote", onMenuClick = onMenuClick)
+
+        // Only worth showing once there's an actual choice - a single
+        // connected device (the common case) shows nothing extra here,
+        // same screen as before this feature existed.
+        if (connectedDevices.size > 1) {
+            DeviceSwitcher(
+                options = connectedDevices,
+                onSelect = { deviceId -> viewModel.switchActiveDevice(deviceId) },
+            )
+        }
 
         if (connectionState !is ConnectionState.Connected) {
             Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -192,6 +206,62 @@ private fun RowScope.SectionTab(
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * Chip showing the active device's name; tapping it opens a dropdown of
+ * every other currently-connected device to switch to instantly (no
+ * reconnect - both sessions are already live). Only rendered by the caller
+ * once there are 2+ connected devices, so this never appears for the
+ * common single-device case.
+ */
+@Composable
+private fun DeviceSwitcher(options: List<ConnectedDeviceOption>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val active = options.find { it.isActive } ?: options.firstOrNull()
+
+    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .clickable { expanded = true }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Tv,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                active?.device?.name ?: "Select device",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Switch device",
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    leadingIcon = { Icon(Icons.Filled.Tv, contentDescription = null) },
+                    text = { Text(option.device.name + if (option.isActive) " (active)" else "") },
+                    onClick = {
+                        expanded = false
+                        if (!option.isActive) onSelect(option.device.id)
+                    },
+                )
+            }
+        }
     }
 }
 

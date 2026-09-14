@@ -25,6 +25,10 @@ data class SettingsUiState(
     val devices: List<SavedDevice> = emptyList(),
     val activeDeviceId: String? = null,
     val connectionState: ConnectionState = ConnectionState.Disconnected,
+    // Every currently-tracked device's own state, keyed by device id - a TV
+    // and a Fire Stick can each show "Connected" here at once, independent
+    // of which one is active (connectionState/connectionManager.state).
+    val connectionStates: Map<String, ConnectionState> = emptyMap(),
 )
 
 data class DiscoveryUiState(
@@ -45,8 +49,9 @@ class SettingsViewModel(
         deviceStore.devices,
         deviceStore.activeDeviceId,
         connectionManager.state,
-    ) { devices, activeId, connectionState ->
-        SettingsUiState(devices, activeId, connectionState)
+        connectionManager.connectionsState,
+    ) { devices, activeId, connectionState, connectionStates ->
+        SettingsUiState(devices, activeId, connectionState, connectionStates)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
 
     private val _discoveryState = MutableStateFlow(DiscoveryUiState())
@@ -72,16 +77,14 @@ class SettingsViewModel(
 
     fun deleteDevice(id: String) {
         viewModelScope.launch {
-            if (uiState.value.activeDeviceId == id) {
-                connectionManager.disconnect()
-            }
+            connectionManager.disconnectDevice(id)
             deviceStore.deleteDevice(id)
         }
     }
 
     fun connectTo(device: SavedDevice) {
         viewModelScope.launch {
-            val success = connectionManager.connectSuspending(device.host, device.port)
+            val success = connectionManager.connectSuspending(device.id, device.host, device.port)
             if (success) {
                 deviceStore.markConnected(device.id)
                 if (device.macAddress == null) {
@@ -96,9 +99,17 @@ class SettingsViewModel(
         }
     }
 
-    fun disconnect() {
-        connectionManager.disconnect()
-        viewModelScope.launch { deviceStore.setActiveDevice(null) }
+    fun disconnect(id: String) {
+        connectionManager.disconnectDevice(id)
+        if (uiState.value.activeDeviceId == id) {
+            viewModelScope.launch { deviceStore.setActiveDevice(null) }
+        }
+    }
+
+    /** Switches which already-connected device Remote's commands (and Files/Transfers) target - instant, no reconnect. */
+    fun setActive(id: String) {
+        connectionManager.setActive(id)
+        viewModelScope.launch { deviceStore.setActiveDevice(id) }
     }
 }
 

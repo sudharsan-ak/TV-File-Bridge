@@ -11,6 +11,8 @@ import com.tvfilebridge.app.connection.ConnectionState
 import com.tvfilebridge.app.cursor.CursorBridge
 import com.tvfilebridge.app.cursor.RemoteApp
 import com.tvfilebridge.app.cursor.TvCompanionInstaller
+import com.tvfilebridge.app.data.DeviceStore
+import com.tvfilebridge.app.data.SavedDevice
 import com.tvfilebridge.app.remote.AndroidKeyCode
 import com.tvfilebridge.app.remote.NowPlayingInfo
 import com.tvfilebridge.app.remote.RemoteControlRepository
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -32,15 +35,41 @@ data class AppListUiState(
 
 enum class CompanionStatus { UNKNOWN, CHECKING, NOT_INSTALLED, INSTALLING, INSTALLED, INSTALL_FAILED }
 
+/** One row for Remote's device switcher - only devices with a live connection right now are worth switching to. */
+data class ConnectedDeviceOption(val device: SavedDevice, val isActive: Boolean)
+
 class RemoteViewModel(
     private val remoteControlRepository: RemoteControlRepository,
     private val tvCompanionInstaller: TvCompanionInstaller,
     private val cursorBridge: CursorBridge,
-    connectionManager: AdbConnectionManager,
+    private val connectionManager: AdbConnectionManager,
+    private val deviceStore: DeviceStore,
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConnectionState.Disconnected)
+
+    /**
+     * Every saved device that's currently connected (any state but
+     * Disconnected/Failed counts as "worth showing", so a Connecting one
+     * still appears rather than flickering in/out), with a flag for which
+     * one is active. Empty/one-item lists mean there's nothing to switch
+     * between - the UI only shows the picker once there's a real choice.
+     */
+    val connectedDevices: StateFlow<List<ConnectedDeviceOption>> = combine(
+        deviceStore.devices,
+        deviceStore.activeDeviceId,
+        connectionManager.connectionsState,
+    ) { devices, activeId, connectionStates ->
+        devices
+            .filter { device -> connectionStates[device.id].let { it is ConnectionState.Connected || it is ConnectionState.Connecting } }
+            .map { device -> ConnectedDeviceOption(device, device.id == activeId) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun switchActiveDevice(deviceId: String) {
+        connectionManager.setActive(deviceId)
+        viewModelScope.launch { deviceStore.setActiveDevice(deviceId) }
+    }
 
     private val _appListState = MutableStateFlow(AppListUiState())
     val appListState: StateFlow<AppListUiState> = _appListState.asStateFlow()
@@ -384,6 +413,7 @@ class RemoteViewModelFactory(private val container: AppContainer) : ViewModelPro
             container.tvCompanionInstaller,
             container.cursorBridge,
             container.connectionManager,
+            container.deviceStore,
         ) as T
     }
 }

@@ -120,9 +120,10 @@ fun SettingsScreen(
                     DeviceCard(
                         device = device,
                         isActive = device.id == uiState.activeDeviceId,
-                        connectionState = uiState.connectionState,
+                        connectionState = uiState.connectionStates[device.id] ?: ConnectionState.Disconnected,
                         onConnect = { viewModel.connectTo(device) },
-                        onDisconnect = { viewModel.disconnect() },
+                        onDisconnect = { viewModel.disconnect(device.id) },
+                        onSetActive = { viewModel.setActive(device.id) },
                         onDelete = { viewModel.deleteDevice(device.id) },
                     )
                 }
@@ -311,6 +312,7 @@ private fun DeviceCard(
     connectionState: ConnectionState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onSetActive: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -324,7 +326,17 @@ private fun DeviceCard(
                 Icon(Icons.Filled.Tv, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(device.name, style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(device.name, style = MaterialTheme.typography.titleMedium)
+                        if (isActive) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "ACTIVE",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                     Text(
                         "${device.host}:${device.port}",
                         style = MaterialTheme.typography.bodyMedium,
@@ -338,21 +350,27 @@ private fun DeviceCard(
 
             Spacer(Modifier.height(12.dp))
 
-            if (isActive) {
-                StatusRow(connectionState)
-                Spacer(Modifier.height(8.dp))
-            }
+            // Every device's own status shows now, not just the active one -
+            // a TV and a Fire Stick can both be genuinely connected at once,
+            // independent of which is active for Remote's commands.
+            StatusRow(connectionState)
+            Spacer(Modifier.height(8.dp))
 
             when {
-                isActive && connectionState is ConnectionState.Connected ->
+                connectionState is ConnectionState.Connected && isActive ->
                     OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) { Text("Disconnect") }
-                isActive && connectionState is ConnectionState.Connecting ->
+                connectionState is ConnectionState.Connected ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onSetActive, modifier = Modifier.weight(1f)) { Text("Make active") }
+                        OutlinedButton(onClick = onDisconnect, modifier = Modifier.weight(1f)) { Text("Disconnect") }
+                    }
+                connectionState is ConnectionState.Connecting ->
                     Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text("Connecting…") }
                 else ->
                     Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) { Text("Connect") }
             }
 
-            if (isActive && connectionState is ConnectionState.Failed) {
+            if (connectionState is ConnectionState.Failed) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     hintForFailure(connectionState.reason),
