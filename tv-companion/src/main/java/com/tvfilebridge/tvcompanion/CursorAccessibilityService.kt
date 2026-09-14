@@ -109,6 +109,13 @@ class CursorAccessibilityService : AccessibilityService(), CommandHandler {
         updateCursorPosition()
     }
 
+    override fun onMoveTo(xFraction: Float, yFraction: Float) {
+        cursorX = (xFraction.coerceIn(0f, 1f) * screenWidth)
+        cursorY = (yFraction.coerceIn(0f, 1f) * screenHeight)
+        showCursor()
+        updateCursorPosition()
+    }
+
     /**
      * dispatchGesture()'s synthesized single-point tap gets cancelled
      * instantly on this TV's OS build regardless of stroke shape/duration.

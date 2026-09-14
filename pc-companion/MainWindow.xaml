@@ -96,6 +96,40 @@
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
 
+        <!-- Round icon button matching the phone app's RemoteIconButton -
+             fixed circular size (Width = Height), same CardBrush fill, no
+             border, used for every Remote-tab control (D-pad arrows, OK,
+             Home/Power/Settings/Input, volume, media transport). -->
+        <Style x:Key="CircleButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="56"/>
+            <Setter Property="Height" Value="56"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="999">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource HairlineBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CircleAccentButton" TargetType="Button" BasedOn="{StaticResource CircleButton}">
+            <Setter Property="Background" Value="{StaticResource TealBrush}"/>
+            <Setter Property="Foreground" Value="#0B1615"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
@@ -231,13 +265,14 @@
             <RadioButton x:Name="NavTvFiles" Content="TV Files" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4" Checked="OnNavTvFilesChecked"/>
             <RadioButton x:Name="NavInstallApk" Content="Install APK" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
             <RadioButton x:Name="NavScreenView" Content="Screen View" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4" Checked="OnNavScreenViewChecked"/>
+            <RadioButton x:Name="NavRemote" Content="Remote" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4" Checked="OnNavRemoteChecked" Unchecked="OnNavRemoteUnchecked"/>
             <RadioButton x:Name="NavHistory" Content="History" Style="{StaticResource NavItem}" GroupName="Nav" Margin="0,0,0,4"/>
             <RadioButton x:Name="NavSettings" Content="Settings" Style="{StaticResource NavItem}" GroupName="Nav"/>
         </StackPanel>
 
         <Border x:Name="NavDivider" Grid.Column="0" Background="{StaticResource HairlineBrush}" Width="1" HorizontalAlignment="Right" Margin="0,8,0,8" Visibility="Collapsed"/>
 
-        <DockPanel Grid.Column="1" Margin="16,0,0,0">
+        <DockPanel Grid.Column="1" Margin="16,0,0,0" PreviewMouseDown="OnContentAreaPreviewMouseDown">
         <Button DockPanel.Dock="Top" x:Name="NavToggleButton" Content="☰" Style="{StaticResource FlatButton}" HorizontalAlignment="Left"
                 Padding="10,6" Margin="0,0,0,12" Click="OnNavToggleClick" ToolTip="Show/hide navigation"/>
         <Grid>
@@ -266,6 +301,12 @@
                 <StackPanel>
                     <TextBlock Text="Screen View" FontWeight="Bold"/>
                     <TextBlock Text="Mirror a TV's screen on this PC." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="Remote" FontWeight="Bold"/>
+                    <TextBlock Text="D-pad, volume, power, and app launcher for the connected TV." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
             <Border Style="{StaticResource CardBorder}">
@@ -632,6 +673,180 @@
                                                             Click="OnPhoneScreenViewClick" Tag="{Binding}"/>
                                                 </StackPanel>
                                             </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+
+        <DockPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavRemote, Converter={StaticResource BoolVisibility}}">
+            <TextBlock DockPanel.Dock="Top" Text="Remote" FontWeight="Bold" FontSize="14" Margin="0,0,0,4"/>
+            <TextBlock DockPanel.Dock="Top" Text="Control the connected TV the same way the phone app's Remote tab does - plain ADB keyevents, no TV companion app needed."
+                       Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+            <StackPanel DockPanel.Dock="Top" Visibility="{Binding IsTvConnectedForInstall, Converter={StaticResource InverseBoolVisibility}}">
+                <TextBlock Text="Connect to a TV first (Devices or TV Files tab), then come back here." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <TextBlock DockPanel.Dock="Top" Text="{Binding RemoteActionError}" Foreground="#FF6B5E" FontSize="12"
+                       TextWrapping="Wrap" Margin="0,0,0,12"
+                       Visibility="{Binding HasRemoteActionError, Converter={StaticResource BoolVisibility}}"/>
+
+            <TabControl Padding="0" Visibility="{Binding IsTvConnectedForInstall, Converter={StaticResource BoolVisibility}}">
+                <TabItem Header="D-pad">
+                    <!-- Two columns side by side, the whole block centered as
+                         one unit in the tab's available width - previously
+                         every piece (touchpad, pills, button cluster) was its
+                         own separately-centered row stacked tall and narrow,
+                         which left the window's actual width unused and
+                         forced vertical scrolling. Column heights are tuned
+                         to land close to equal (touchpad ~250px vs. the
+                         button cluster's D-pad-plus-media-row ~240px) so
+                         neither column visually dwarfs the other. -->
+                    <Grid HorizontalAlignment="Center" Margin="0,24,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,32,0">
+                            <!-- Touchpad: only usable once TV Bridge Cursor is
+                                 installed + enabled on the TV (checked when
+                                 this tab is opened) - same prerequisite the
+                                 phone app's cursor mode has. Not installed
+                                 shows a pointer to the phone app's Install
+                                 screen instead of a confusing connection
+                                 failure on first drag. -->
+                            <TextBlock Text="Move your mouse over this area to move the cursor, click to tap." Foreground="{StaticResource MutedTextBrush}" FontSize="12"
+                                       Width="360" TextWrapping="Wrap" Margin="0,0,0,10" Visibility="{Binding IsCursorReady, Converter={StaticResource BoolVisibility}}"/>
+                            <Border Style="{StaticResource CardBorder}" Width="360" Height="230" Margin="0,0,0,16"
+                                    Cursor="Hand" Background="{StaticResource SurfaceBrush}"
+                                    Visibility="{Binding IsCursorReady, Converter={StaticResource BoolVisibility}}"
+                                    PreviewMouseLeftButtonDown="OnTouchpadMouseDown" MouseMove="OnTouchpadMouseMove">
+                                <TextBlock Text="&#xE962;" FontFamily="Segoe MDL2 Assets" FontSize="32" Foreground="{StaticResource MutedTextBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <Border Style="{StaticResource CardBorder}" Width="360" Height="230" Margin="0,0,0,16"
+                                    Visibility="{Binding IsCursorNotReady, Converter={StaticResource BoolVisibility}}">
+                                <TextBlock Text="Cursor mode needs TV Bridge Cursor installed on the TV - install it from the phone app's Install screen, then reopen this tab."
+                                           Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </Border>
+
+                            <!-- Recent/Back pills directly under the touchpad,
+                                 same relative position the phone's touchpad-
+                                 adjacent row occupies. -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Button Style="{StaticResource FlatButton}" Margin="0,0,10,0" Click="OnRemoteInputClick" ToolTip="Opens the TV's input-switch overlay">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE8AB;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Recent" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource FlatButton}" Click="OnRemoteBackClick">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Back" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <!-- Home/Power/Settings on the left of the D-pad,
+                                 Volume on the right - same side-column layout
+                                 as the phone app's CompactDPadBlock. Column
+                                 heights match the D-pad's own height (three
+                                 36px buttons + two 14px gaps = 136px, same as
+                                 the 136px D-pad) so all three sit level with
+                                 it instead of looking taller/shorter by eye. -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,20,0">
+                                    <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Margin="0,0,0,14" Click="OnRemoteHomeClick" ToolTip="Home">
+                                        <TextBlock Text="&#xE10F;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Margin="0,0,0,14" Click="OnRemotePowerClick" ToolTip="Power">
+                                        <TextBlock Text="&#xE7E8;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Click="OnRemoteTvSettingsClick" ToolTip="TV Settings">
+                                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                </StackPanel>
+
+                                <!-- Round D-pad: one big circle for the ring,
+                                     arrow glyphs floating on it (no separate
+                                     button backgrounds per arrow), OK as a
+                                     smaller filled teal circle in the center -
+                                     same layered-circle shape as the phone
+                                     app's DPad composable. -->
+                                <Grid Grid.Column="1" Width="136" Height="136">
+                                    <Ellipse Fill="{StaticResource CardBrush}"/>
+                                    <Button Style="{StaticResource CircleButton}" Background="Transparent" Width="38" Height="38"
+                                            VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,4,0,0" Click="OnRemoteDpadUpClick">
+                                        <TextBlock Text="&#xE70E;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Background="Transparent" Width="38" Height="38"
+                                            VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,4" Click="OnRemoteDpadDownClick">
+                                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Background="Transparent" Width="38" Height="38"
+                                            VerticalAlignment="Center" HorizontalAlignment="Left" Margin="4,0,0,0" Click="OnRemoteDpadLeftClick">
+                                        <TextBlock Text="&#xE76B;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Background="Transparent" Width="38" Height="38"
+                                            VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,4,0" Click="OnRemoteDpadRightClick">
+                                        <TextBlock Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleAccentButton}" Content="OK" Width="46" Height="46"
+                                            VerticalAlignment="Center" HorizontalAlignment="Center" Click="OnRemoteDpadCenterClick"/>
+                                </Grid>
+
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="20,0,0,0">
+                                    <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Margin="0,0,0,14" Click="OnRemoteVolumeDownClick" ToolTip="Volume down">
+                                        <TextBlock Text="&#xE949;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Margin="0,0,0,14" Click="OnRemoteMuteClick" ToolTip="Mute">
+                                        <TextBlock Text="&#xE74F;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Click="OnRemoteVolumeUpClick" ToolTip="Volume up">
+                                        <TextBlock Text="&#xE995;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                                <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Margin="0,0,12,0" Click="OnRemoteRewindClick" ToolTip="Rewind">
+                                    <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                </Button>
+                                <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Margin="0,0,12,0" Click="OnRemotePlayPauseClick" ToolTip="Play/Pause">
+                                    <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                </Button>
+                                <Button Style="{StaticResource CircleButton}" Width="36" Height="36" Click="OnRemoteFastForwardClick" ToolTip="Fast forward">
+                                    <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="15"/>
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Apps">
+                    <DockPanel Margin="0,12,0,0">
+                        <Button DockPanel.Dock="Top" Content="Refresh" Style="{StaticResource FlatButton}"
+                                HorizontalAlignment="Right" Margin="0,0,0,12" Click="OnRefreshRemoteAppsClick"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding RemoteApps}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource CardBorder}" Cursor="Hand" MouseLeftButtonUp="OnRemoteAppClick" Tag="{Binding}">
+                                            <TextBlock Text="{Binding Label}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}"/>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

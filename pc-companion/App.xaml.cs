@@ -23,7 +23,13 @@ public partial class App : Application
     public ClipboardWatcher Watcher { get; private set; } = null!;
     public PcTransferManager TransferManager { get; private set; } = null!;
     public TvAdbClient TvAdbClient { get; } = new();
+    public TvCursorBridge TvCursorBridge { get; }
     private TrayIconManager _trayIcon = null!;
+
+    public App()
+    {
+        TvCursorBridge = new TvCursorBridge(TvAdbClient);
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {

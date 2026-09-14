@@ -66,6 +66,9 @@ public class TvAdbClient
     public string? ConnectedHost { get; private set; }
     public int? ConnectedPort { get; private set; }
 
+    /// <summary>Exposes the underlying AdbClient/DeviceData for TvCursorBridge's port-forward setup - that needs the raw client/device pair, not the higher-level shell/push/pull helpers this class otherwise wraps them in.</summary>
+    internal (AdbClient Client, DeviceData Device)? RawConnection => _device is { } device ? (_client, device) : null;
+
     private static string AdbExePath => Path.Combine(AppContext.BaseDirectory, "Assets", "adb", "adb.exe");
 
     public async Task<Result<Unit>> ConnectAsync(string host, int port)
@@ -258,6 +261,122 @@ public class TvAdbClient
         {
             return Result<string>.Failure(ex.Message);
         }
+    }
+
+    /// <summary>Same `input keyevent` mechanism the phone's RemoteControlRepository.keyEvent uses - see AndroidKeyCode for the standard codes.</summary>
+    public async Task<Result<Unit>> SendKeyEventAsync(int code) => ToUnitResult(await ShellAsync($"input keyevent {code}"));
+
+    /// <summary>Opens the TV's own system Settings, matching the phone's Remote tab Settings button - via the standard android.settings.SETTINGS intent action rather than a keyevent, since there's no reliable KEYCODE_SETTINGS equivalent on Android TV.</summary>
+    public async Task<Result<Unit>> OpenTvSettingsAsync() => ToUnitResult(await ShellAsync("am start -a android.settings.SETTINGS"));
+
+    /// <summary>Same `monkey` launcher-intent trick the phone's RemoteControlRepository.launchApp uses - works without needing each app's specific launch activity name.</summary>
+    public async Task<Result<Unit>> LaunchAppAsync(string packageName) => ToUnitResult(await ShellAsync($"monkey -p {packageName} -c android.intent.category.LAUNCHER 1"));
+
+    private const string TvCompanionPackage = "com.tvfilebridge.tvcompanion";
+    private const string TvCompanionAccessibilityService = TvCompanionPackage + "/" + TvCompanionPackage + ".CursorAccessibilityService";
+
+    /// <summary>Same `pm list packages` check the phone's TvCompanionInstaller.isInstalled uses - true only if TV Bridge Cursor (installed from the phone app's Install screen) is present on the connected TV.</summary>
+    public async Task<bool> IsCursorCompanionInstalledAsync()
+    {
+        var result = await ShellAsync($"pm list packages {TvCompanionPackage}");
+        return result.IsSuccess && result.Value!.Contains(TvCompanionPackage);
+    }
+
+    /// <summary>
+    /// Same read-modify-write settings trick the phone's
+    /// RemoteControlRepository.ensureCursorAccessibilityEnabled uses - ADB's
+    /// shell UID is trusted with WRITE_SECURE_SETTINGS for exactly this, no
+    /// root needed. Appends the companion's accessibility service to
+    /// whatever's already enabled rather than overwriting, so other apps'
+    /// accessibility features (a different remote app, etc.) aren't silently
+    /// disabled. No-ops if already enabled.
+    /// </summary>
+    public async Task<Result<Unit>> EnsureCursorAccessibilityEnabledAsync()
+    {
+        var currentResult = await ShellAsync("settings get secure enabled_accessibility_services");
+        if (!currentResult.IsSuccess) return Result<Unit>.Failure(currentResult.ErrorMessage!);
+
+        var services = currentResult.Value!.Trim().Split(':').Select(s => s.Trim()).Where(s => s.Length > 0 && s != "null").ToList();
+        if (!services.Contains(TvCompanionAccessibilityService))
+        {
+            var newList = string.Join(":", services.Append(TvCompanionAccessibilityService));
+            var setResult = await ShellAsync($"settings put secure enabled_accessibility_services '{newList}'");
+            if (!setResult.IsSuccess) return Result<Unit>.Failure(setResult.ErrorMessage!);
+        }
+
+        var globalEnabledResult = await ShellAsync("settings get secure accessibility_enabled");
+        if (!globalEnabledResult.IsSuccess) return Result<Unit>.Failure(globalEnabledResult.ErrorMessage!);
+        if (globalEnabledResult.Value!.Trim() != "1")
+        {
+            var setGlobalResult = await ShellAsync("settings put secure accessibility_enabled 1");
+            if (!setGlobalResult.IsSuccess) return Result<Unit>.Failure(setGlobalResult.ErrorMessage!);
+        }
+
+        return Result<Unit>.Success(Unit.Value);
+    }
+
+    private static Result<Unit> ToUnitResult(Result<string> result) =>
+        result.IsSuccess ? Result<Unit>.Success(Unit.Value) : Result<Unit>.Failure(result.ErrorMessage!);
+
+    /// <summary>Runs an arbitrary shell command on the connected TV and returns its combined output - the general-purpose primitive the key/settings/launch helpers above are built on.</summary>
+    public async Task<Result<string>> ShellAsync(string command)
+    {
+        if (_device is not { } device) return Result<string>.Failure("Not connected");
+        try
+        {
+            var receiver = new ConsoleOutputReceiver();
+            await _client.ExecuteRemoteCommandAsync(command, device, receiver, Encoding.UTF8, CancellationToken.None);
+            return Result<string>.Success(receiver.ToString());
+        }
+        catch (Exception ex)
+        {
+            return Result<string>.Failure(ex.Message);
+        }
+    }
+
+    /// <summary>Installed third-party apps with a launcher entry, via `pm list packages -3` plus a guessed display label - same shape as the phone's RemoteControlRepository.listLaunchableApps.</summary>
+    public async Task<Result<List<InstalledApp>>> ListLaunchableAppsAsync()
+    {
+        var result = await ShellAsync("pm list packages -3");
+        if (!result.IsSuccess) return Result<List<InstalledApp>>.Failure(result.ErrorMessage!);
+
+        var apps = result.Value!
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("package:"))
+            .Select(line => line["package:".Length..].Trim())
+            .Where(pkg => pkg.Length > 0)
+            .Select(pkg => new InstalledApp { PackageName = pkg, Label = GuessAppLabel(pkg) })
+            .OrderBy(app => app.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return Result<List<InstalledApp>>.Success(apps);
+    }
+
+    private static readonly string[] KnownAppSuffixes = { "livingroomplus", "androidtv", "android_tv", "androidtvunplugged", "tvunplugged", "android", "tv", "app" };
+    private static readonly HashSet<string> VariantSegments = new(StringComparer.OrdinalIgnoreCase) { "stable", "beta", "debug", "release", "free", "pro", "lite", "nightly", "dev" };
+
+    /// <summary>
+    /// Best-effort human label from a bare package name, same heuristic as
+    /// the phone's guessLabel - not meant to be exact, just good enough for a
+    /// launcher list instead of showing raw package names like
+    /// "com.google.android.youtube.tv".
+    /// </summary>
+    private static string GuessAppLabel(string packageName)
+    {
+        var segments = packageName.Split('.');
+        var nameSegment = segments.LastOrDefault(s => !VariantSegments.Contains(s)) ?? segments[^1];
+        var cleaned = nameSegment.ToLowerInvariant();
+        foreach (var suffix in KnownAppSuffixes)
+        {
+            if (cleaned.EndsWith(suffix) && cleaned.Length > suffix.Length) cleaned = cleaned[..^suffix.Length];
+        }
+        if (cleaned.Length == 0) cleaned = nameSegment;
+
+        var words = cleaned.Replace('_', ' ').Replace('-', ' ')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => char.ToUpperInvariant(w[0]) + w[1..]);
+        var label = string.Join(" ", words);
+        return label.Length == 0 ? packageName : label;
     }
 
     public async Task<Result<Unit>> DeleteAsync(string path)

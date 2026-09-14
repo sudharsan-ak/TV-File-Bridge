@@ -388,9 +388,16 @@ private fun TouchpadFabBlock(viewModel: RemoteViewModel, container: AppContainer
             Touchpad(viewModel)
             Spacer(Modifier.height(16.dp))
             Row(
+                // Left padding clears the Keyboard FAB's default top-start
+                // resting spot, which otherwise crowds right up against
+                // Recent with no visible gap - Back and Reset already had
+                // enough natural spacing, only the first pill in the row sat
+                // directly against it.
+                modifier = Modifier.padding(start = 48.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                RecentAppsPill(viewModel)
                 BackPill(viewModel)
                 ResetFabPositionsButton { scope.launch { container.fabPositionStore.resetAll() } }
             }
@@ -469,7 +476,7 @@ private fun ResetFabPositionsButton(onClick: () -> Unit) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.width(6.dp))
-        Text("Reset positions", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Reset", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -925,6 +932,27 @@ private fun CompanionGate(viewModel: RemoteViewModel, content: @Composable () ->
             }
         }
         CompanionStatus.INSTALLED -> content()
+    }
+}
+
+@Composable
+private fun RecentAppsPill(viewModel: RemoteViewModel) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { viewModel.sendKeyEvent(AndroidKeyCode.TV_INPUT) }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Tv,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text("Recent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

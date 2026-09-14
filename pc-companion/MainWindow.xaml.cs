@@ -22,6 +22,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     public ObservableCollection<SavedTv> SavedTvs { get; } = new();
     public ObservableCollection<AdbDevice> PhoneScreenDevices { get; } = new();
     public ObservableCollection<TvBreadcrumb> TvBreadcrumbs { get; } = new();
+    public ObservableCollection<InstalledApp> RemoteApps { get; } = new();
 
     private bool _isTvSelecting;
     // Drives per-card checkbox visibility - hidden until Ctrl/Shift-click
@@ -52,6 +53,35 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     public bool HasScreenViewError => !string.IsNullOrEmpty(ScreenViewError);
 
     public bool IsTvConnectedForInstall => App.TvAdbClient.IsConnected;
+
+    private string? _remoteActionError;
+    public string? RemoteActionError
+    {
+        get => _remoteActionError;
+        set { _remoteActionError = value; OnPropertyChanged(nameof(RemoteActionError)); OnPropertyChanged(nameof(HasRemoteActionError)); }
+    }
+    public bool HasRemoteActionError => !string.IsNullOrEmpty(RemoteActionError);
+
+    // Cursor mode needs TV Bridge Cursor installed on the TV (via the phone
+    // app's Install screen - PC Companion doesn't carry its own copy to
+    // sideload) plus its accessibility service enabled. Three states rather
+    // than a bool: "haven't checked yet" is distinct from "checked, not
+    // installed" so the touchpad area doesn't flash a false negative before
+    // the check completes.
+    private bool? _isCursorCompanionInstalled;
+    public bool? IsCursorCompanionInstalled
+    {
+        get => _isCursorCompanionInstalled;
+        set
+        {
+            _isCursorCompanionInstalled = value;
+            OnPropertyChanged(nameof(IsCursorCompanionInstalled));
+            OnPropertyChanged(nameof(IsCursorReady));
+            OnPropertyChanged(nameof(IsCursorNotReady));
+        }
+    }
+    public bool IsCursorReady => IsCursorCompanionInstalled == true;
+    public bool IsCursorNotReady => IsCursorCompanionInstalled == false;
 
     private string? _apkInstallFileName;
     public string? ApkInstallFileName
@@ -272,6 +302,133 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
 
     private async void OnNavScreenViewChecked(object sender, RoutedEventArgs e) => await RefreshPhoneScreenDevicesAsync();
 
+    private async void OnNavRemoteChecked(object sender, RoutedEventArgs e)
+    {
+        if (!App.TvAdbClient.IsConnected) return;
+        await CheckCursorCompanionAsync();
+        await RefreshRemoteAppsAsync();
+        if (IsCursorReady) await App.TvCursorBridge.ShowAsync();
+    }
+
+    /// <summary>Hides the on-screen cursor overlay when leaving the Remote tab for another nav item - matches the phone app's behavior of not leaving the cursor visible once you're no longer looking at a touchpad to drive it.</summary>
+    private async void OnNavRemoteUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (IsCursorReady) await App.TvCursorBridge.HideAsync();
+    }
+
+    /// <summary>
+    /// Checked once per Remote tab visit (cheap - a single `pm list
+    /// packages` call) rather than cached across the session, so
+    /// installing TV Bridge Cursor from the phone mid-session and coming
+    /// back to this tab picks it up without needing to reconnect.
+    /// </summary>
+    private async Task CheckCursorCompanionAsync()
+    {
+        var installed = await App.TvAdbClient.IsCursorCompanionInstalledAsync();
+        IsCursorCompanionInstalled = installed;
+        if (installed)
+        {
+            await App.TvAdbClient.EnsureCursorAccessibilityEnabledAsync();
+        }
+    }
+
+    private async void OnRefreshRemoteAppsClick(object sender, RoutedEventArgs e) => await RefreshRemoteAppsAsync();
+
+    /// <summary>
+    /// Prefers the TV companion app's LIST_APPS (real PackageManager labels,
+    /// same as the phone shows) when cursor mode is set up; falls back to
+    /// plain `pm list packages` + a guessed label otherwise, so the Apps tab
+    /// still works without requiring TV Bridge Cursor - just with uglier
+    /// names ("Android", "Api") for anything the guess heuristic can't parse.
+    /// </summary>
+    private async Task RefreshRemoteAppsAsync()
+    {
+        RemoteApps.Clear();
+        if (IsCursorReady)
+        {
+            var apps = await App.TvCursorBridge.ListAppsAsync();
+            foreach (var app in apps) RemoteApps.Add(new InstalledApp { PackageName = app.PackageName, Label = app.Label });
+            return;
+        }
+
+        var result = await App.TvAdbClient.ListLaunchableAppsAsync();
+        if (!result.IsSuccess)
+        {
+            RemoteActionError = result.ErrorMessage;
+            return;
+        }
+        foreach (var app in result.Value!) RemoteApps.Add(app);
+    }
+
+    private async void OnRemoteAppClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not InstalledApp app) return;
+        RemoteActionError = null;
+        if (IsCursorReady)
+        {
+            await App.TvCursorBridge.LaunchAppAsync(app.PackageName);
+            return;
+        }
+        var result = await App.TvAdbClient.LaunchAppAsync(app.PackageName);
+        if (!result.IsSuccess) RemoteActionError = result.ErrorMessage;
+    }
+
+    private async Task SendRemoteKeyEventAsync(int code)
+    {
+        RemoteActionError = null;
+        var result = await App.TvAdbClient.SendKeyEventAsync(code);
+        if (!result.IsSuccess) RemoteActionError = result.ErrorMessage;
+    }
+
+    private async void OnRemoteHomeClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.Home);
+    private async void OnRemotePowerClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.Power);
+    private async void OnRemoteInputClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.TvInput);
+    private async void OnRemoteBackClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.Back);
+
+    // Absolute positioning: the touchpad box maps 1:1 onto the TV's screen,
+    // so plain hover (no button held) moves the cursor exactly like a real
+    // trackpad's absolute mode - mouse position within the box IS the
+    // fractional position on the TV. A relative-delta version (MOVE dx dy)
+    // was tried first but fought the natural "reposition the mouse to start
+    // another sweep" motion, since every hover move - including that
+    // reposition - sent a delta. Needs the companion app's MOVE_TO command.
+    private async void OnTouchpadMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        var element = (FrameworkElement)sender;
+        var position = e.GetPosition(element);
+        if (element.ActualWidth <= 0 || element.ActualHeight <= 0) return;
+
+        var xFraction = (float)(position.X / element.ActualWidth);
+        var yFraction = (float)(position.Y / element.ActualHeight);
+        await App.TvCursorBridge.MoveToAsync(xFraction, yFraction);
+    }
+
+    private async void OnTouchpadMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        await App.TvCursorBridge.ClickAsync();
+    }
+
+    private async void OnRemoteTvSettingsClick(object sender, RoutedEventArgs e)
+    {
+        RemoteActionError = null;
+        var result = await App.TvAdbClient.OpenTvSettingsAsync();
+        if (!result.IsSuccess) RemoteActionError = result.ErrorMessage;
+    }
+
+    private async void OnRemoteDpadUpClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.DpadUp);
+    private async void OnRemoteDpadDownClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.DpadDown);
+    private async void OnRemoteDpadLeftClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.DpadLeft);
+    private async void OnRemoteDpadRightClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.DpadRight);
+    private async void OnRemoteDpadCenterClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.DpadCenter);
+
+    private async void OnRemoteVolumeUpClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.VolumeUp);
+    private async void OnRemoteVolumeDownClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.VolumeDown);
+    private async void OnRemoteMuteClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.VolumeMute);
+
+    private async void OnRemoteRewindClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.MediaRewind);
+    private async void OnRemotePlayPauseClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.MediaPlayPause);
+    private async void OnRemoteFastForwardClick(object sender, RoutedEventArgs e) => await SendRemoteKeyEventAsync(AndroidKeyCode.MediaFastForward);
+
     private async Task RefreshPhoneScreenDevicesAsync()
     {
         var devices = await AdbDeviceLister.ListAsync();
@@ -316,12 +473,45 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         RefreshSavedTvs();
     }
 
+    // Auto-collapses the nav a few seconds after it's opened, or immediately
+    // on the first click into the content area - keeps the window's width
+    // available for whatever tab you're actually using instead of the nav
+    // rail sitting open indefinitely once you're done picking a page.
+    private static readonly TimeSpan NavAutoCollapseDelay = TimeSpan.FromSeconds(3);
+    private System.Windows.Threading.DispatcherTimer? _navAutoCollapseTimer;
+
     private void OnNavToggleClick(object sender, RoutedEventArgs e)
     {
         var collapsed = NavColumn.Width.Value == 0;
-        NavColumn.Width = new GridLength(collapsed ? 150 : 0);
-        NavPanel.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
-        NavDivider.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
+        SetNavCollapsed(!collapsed);
+    }
+
+    private void SetNavCollapsed(bool collapsed)
+    {
+        NavColumn.Width = new GridLength(collapsed ? 0 : 150);
+        NavPanel.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        NavDivider.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        _navAutoCollapseTimer?.Stop();
+
+        if (!collapsed)
+        {
+            _navAutoCollapseTimer ??= new System.Windows.Threading.DispatcherTimer { Interval = NavAutoCollapseDelay };
+            _navAutoCollapseTimer.Tick -= OnNavAutoCollapseTick;
+            _navAutoCollapseTimer.Tick += OnNavAutoCollapseTick;
+            _navAutoCollapseTimer.Start();
+        }
+    }
+
+    private void OnNavAutoCollapseTick(object? sender, EventArgs e)
+    {
+        _navAutoCollapseTimer!.Stop();
+        SetNavCollapsed(true);
+    }
+
+    /// <summary>Collapses the nav immediately on the first click anywhere in the content area, rather than waiting out the auto-collapse timer, matching "clicking the page area shrinks it right away".</summary>
+    private void OnContentAreaPreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (NavColumn.Width.Value > 0) SetNavCollapsed(true);
     }
 
     private async void OnPickApkClick(object sender, RoutedEventArgs e)

@@ -19,6 +19,12 @@ const val COMMAND_SERVER_PORT = 7912
  * Commands (one per line):
  *   MOVE <dx> <dy>       - move cursor by a relative delta (shows the cursor,
  *                          resets its auto-hide timer)
+ *   MOVE_TO <xFrac> <yFrac> - move cursor to an absolute position, as a
+ *                          fraction (0.0-1.0) of the TV's screen width/height
+ *                          rather than raw pixels, since the sender's own
+ *                          touchpad is a different size than the TV screen -
+ *                          lets a touchpad track hover position 1:1 with no
+ *                          drag/button needed, unlike MOVE's relative deltas
  *   CLICK                - tap at the current cursor position (also shows it)
  *   SHOW                 - show the cursor without moving it (entering cursor mode)
  *   HIDE                 - hide the cursor immediately (leaving cursor mode)
@@ -81,6 +87,11 @@ class CommandServer(private val handler: CommandHandler) {
                 val dy = parts.getOrNull(2)?.toFloatOrNull() ?: 0f
                 handler.onMove(dx, dy)
             }
+            "MOVE_TO" -> {
+                val xFrac = parts.getOrNull(1)?.toFloatOrNull() ?: return
+                val yFrac = parts.getOrNull(2)?.toFloatOrNull() ?: return
+                handler.onMoveTo(xFrac, yFrac)
+            }
             "CLICK" -> {
                 val (x, y) = handler.onClick()
                 writer.println("$x $y")
@@ -105,6 +116,8 @@ class CommandServer(private val handler: CommandHandler) {
 
 interface CommandHandler {
     fun onMove(dx: Float, dy: Float)
+    /** [xFraction]/[yFraction] are 0.0-1.0 across the TV's screen width/height. */
+    fun onMoveTo(xFraction: Float, yFraction: Float)
     /** Returns the cursor's current (x, y) on the TV's screen for the phone to tap via ADB. */
     fun onClick(): Pair<Int, Int>
     fun onShowCursor()

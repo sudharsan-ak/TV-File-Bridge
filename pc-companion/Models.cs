@@ -48,6 +48,13 @@ public class PairedDevice
     public bool IsPrimary { get; set; }
 }
 
+/// <summary>One installed app returned by TvAdbClient.ListLaunchableAppsAsync, for the Remote tab's app launcher - not persisted, live-fetched each time.</summary>
+public class InstalledApp
+{
+    public string PackageName { get; set; } = "";
+    public string Label { get; set; } = "";
+}
+
 public class SavedTv
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();

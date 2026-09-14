@@ -22,5 +22,8 @@ object AndroidKeyCode {
 
     const val POWER = 26
 
+    /** Opens the TV's own input-switch overlay (Sony's "Control menu" - HDMI inputs + pinned casting/apps), same as the physical remote's INPUT button. Confirmed working against a Sony Bravia Google TV. */
+    const val TV_INPUT = 178
+
     const val DEL = 67
 }
