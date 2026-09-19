@@ -18,7 +18,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     public ObservableCollection<PairedDevice> PairedDevices { get; } = new();
     public ObservableCollection<PcTransfer> SentTransfers => App.TransferManager.SentTransfers;
     public ObservableCollection<PcTransfer> ReceivedTransfers => App.TransferManager.ReceivedTransfers;
-    public ObservableCollection<TvFile> TvFiles { get; } = new();
+    public BulkObservableCollection<TvFile> TvFiles { get; } = new();
     public ObservableCollection<SavedTv> SavedTvs { get; } = new();
     public ObservableCollection<AdbDevice> PhoneScreenDevices { get; } = new();
     public ObservableCollection<TvBreadcrumb> TvBreadcrumbs { get; } = new();
@@ -829,21 +829,88 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         RefreshSavedTvs();
     }
 
-    private async Task RefreshTvFilesAsync()
+    /// <summary>
+    /// Two-phase: if a cached listing exists for this (host, path), show it
+    /// immediately - no ADB round-trip wait, and since thumbnails are
+    /// already disk-cached separately (TvAdbClient.GetThumbnailAsync), those
+    /// pop in instantly too. Then a real `ls` always runs in the background
+    /// and reconciles TvFiles against whatever's actually on the TV now
+    /// (added/removed/changed files), so the cached view self-corrects
+    /// rather than being trusted forever. skipCache forces straight to the
+    /// live fetch, used by the manual refresh button.
+    /// </summary>
+    private async Task RefreshTvFilesAsync(bool skipCache = false)
     {
         UpdateTvBreadcrumbs();
-        var result = await App.TvAdbClient.ListAsync(_tvCurrentPath);
-        TvFiles.Clear();
-        if (!result.IsSuccess)
+        var host = App.TvAdbClient.ConnectedHost;
+        var path = _tvCurrentPath;
+
+        var usedCache = false;
+        if (!skipCache && host != null)
         {
-            AppDialog.ShowInfo($"Couldn't list files: {result.ErrorMessage}", "TV Files");
-            return;
+            var cached = TvListingCacheStore.TryLoad(host, path);
+            if (cached != null)
+            {
+                ApplyTvFileList(cached);
+                usedCache = true;
+                // Yield back to the dispatcher so the cached view actually
+                // paints before the live fetch below starts - without this,
+                // ListAsync's synchronous setup work (building the ADB
+                // command, etc.) runs in the same UI-thread turn as the
+                // cache render above, and WPF never gets a chance to draw
+                // in between. The two then look like one blocking action
+                // ("refresh happens before it shows") even though the cache
+                // render itself was already instant.
+                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+            }
         }
-        foreach (var file in result.Value!) TvFiles.Add(file);
-        SortTvFiles();
-        UpdateTvSelectionBar();
-        _ = LoadThumbnailsAsync(result.Value!);
+
+        IsTvRefreshing = true;
+        try
+        {
+            var result = await App.TvAdbClient.ListAsync(path);
+            if (path != _tvCurrentPath) return; // navigated elsewhere while this was in flight
+            if (!result.IsSuccess)
+            {
+                if (!usedCache) AppDialog.ShowInfo($"Couldn't list files: {result.ErrorMessage}", "TV Files");
+                return;
+            }
+            ApplyTvFileList(result.Value!);
+            if (host != null) TvListingCacheStore.Save(host, path, result.Value!);
+        }
+        finally
+        {
+            IsTvRefreshing = false;
+        }
     }
+
+    /// <summary>
+    /// Full replace of TvFiles (a fresh listing, cached or live) - sorts in
+    /// a plain list first, then populates the ObservableCollection once
+    /// already in final order. Clearing/adding one-by-one and then calling
+    /// SortTvFiles's in-place Move() afterward (right for reordering an
+    /// already-showing list without disturbing it) would instead fire a
+    /// CollectionChanged event per Add plus another per out-of-order Move -
+    /// for ~20-30 files that's 40-60 incremental layout passes on the
+    /// ItemsControl for something that only ever needed to render once.
+    /// </summary>
+    private void ApplyTvFileList(List<TvFile> files)
+    {
+        var sorted = SortedTvFileOrder(files);
+        TvFiles.ReplaceAll(sorted);
+        ApplyTvSortButtonLabel();
+        UpdateTvSelectionBar();
+        _ = LoadThumbnailsAsync(files);
+    }
+
+    private bool _isTvRefreshing;
+    public bool IsTvRefreshing
+    {
+        get => _isTvRefreshing;
+        set { _isTvRefreshing = value; OnPropertyChanged(nameof(IsTvRefreshing)); }
+    }
+
+    private async void OnTvRefreshClick(object sender, RoutedEventArgs e) => await RefreshTvFilesAsync(skipCache: true);
 
     /// <summary>
     /// Splits the current path into clickable segments, "/sdcard" itself
@@ -969,6 +1036,24 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         SortTvFiles();
     }
 
+    /// <summary>Pure sort-order computation shared by SortTvFiles (in-place re-sort of an already-showing list) and ApplyTvFileList (a fresh listing, sorted before it's ever added to TvFiles).</summary>
+    private List<TvFile> SortedTvFileOrder(IEnumerable<TvFile> files)
+    {
+        IEnumerable<TvFile> ordered = _tvSortMode switch
+        {
+            TvSortMode.DateModified => _tvSortDescending
+                ? files.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.ModifiedAt)
+                : files.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.ModifiedAt),
+            TvSortMode.Size => _tvSortDescending
+                ? files.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.SizeBytes)
+                : files.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.SizeBytes),
+            _ => _tvSortDescending
+                ? files.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                : files.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase),
+        };
+        return ordered.ToList();
+    }
+
     /// <summary>
     /// Re-sorts TvFiles in place (directories always first, matching
     /// TvAdbClient.ListAsync's own ordering) rather than replacing the
@@ -977,20 +1062,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     /// </summary>
     private void SortTvFiles()
     {
-        IEnumerable<TvFile> ordered = _tvSortMode switch
-        {
-            TvSortMode.DateModified => _tvSortDescending
-                ? TvFiles.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.ModifiedAt)
-                : TvFiles.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.ModifiedAt),
-            TvSortMode.Size => _tvSortDescending
-                ? TvFiles.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.SizeBytes)
-                : TvFiles.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.SizeBytes),
-            _ => _tvSortDescending
-                ? TvFiles.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.Name, StringComparer.OrdinalIgnoreCase)
-                : TvFiles.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase),
-        };
-
-        var sorted = ordered.ToList();
+        var sorted = SortedTvFileOrder(TvFiles);
         for (var i = 0; i < sorted.Count; i++)
         {
             var currentIndex = TvFiles.IndexOf(sorted[i]);

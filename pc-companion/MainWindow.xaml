@@ -546,6 +546,16 @@
                     <Button DockPanel.Dock="Right" Content="Upload" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvUploadClick"/>
                     <Button x:Name="TvViewModeButton" DockPanel.Dock="Right" Content="List view" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvToggleViewModeClick"/>
                     <Button x:Name="TvSortButton" DockPanel.Dock="Right" Content="Sort: Name ↑" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvSortClick"/>
+                    <!-- Manual override for the two-phase cache-then-live-refresh in
+                         RefreshTvFilesAsync - a cached listing shows instantly and
+                         self-corrects in the background on its own, but this lets the
+                         user force a fresh check right now rather than waiting. -->
+                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvRefreshClick" ToolTip="Refresh">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⟳"/>
+                            <TextBlock Text=" Refreshing…" Visibility="{Binding IsTvRefreshing, Converter={StaticResource BoolVisibility}}"/>
+                        </StackPanel>
+                    </Button>
                     <TextBlock x:Name="TvUpButton" Text="←" Foreground="{StaticResource TealBrush}" FontSize="12" VerticalAlignment="Center"
                                Cursor="Hand" MouseLeftButtonUp="OnTvUpClick" Margin="0,0,8,0" ToolTip="Up one folder" Visibility="Collapsed"/>
                     <ItemsControl ItemsSource="{Binding TvBreadcrumbs}" VerticalAlignment="Center">
