@@ -120,6 +120,13 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     private string _tvCurrentPath = TvRootPath;
     private bool _tvGridView = true;
 
+    // Sort control for the TV Files grid/list - session-only (not persisted
+    // to SettingsStore), same as _tvGridView above. Re-clicking the same
+    // sort mode flips ascending/descending instead of doing nothing.
+    private enum TvSortMode { Name, DateModified, Size }
+    private TvSortMode _tvSortMode = TvSortMode.Name;
+    private bool _tvSortDescending;
+
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int pvAttribute, int cbAttribute);
 
@@ -551,6 +558,17 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         App.HistoryStore.Clear();
     }
 
+    /// <summary>Home screen cards are just shortcuts into the same nav RadioButtons the drawer uses - each card's Tag is bound to its target RadioButton by name, so clicking it is equivalent to clicking that drawer item.</summary>
+    private void OnHomeCardClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is System.Windows.Controls.RadioButton target) target.IsChecked = true;
+    }
+
+    private void OnHomeButtonClick(object sender, RoutedEventArgs e)
+    {
+        NavHome.IsChecked = true;
+    }
+
     private void OnCancelTransferClick(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not PcTransfer transfer) return;
@@ -822,6 +840,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
             return;
         }
         foreach (var file in result.Value!) TvFiles.Add(file);
+        SortTvFiles();
         UpdateTvSelectionBar();
         _ = LoadThumbnailsAsync(result.Value!);
     }
@@ -833,6 +852,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     /// </summary>
     private void UpdateTvBreadcrumbs()
     {
+        TvUpButton.Visibility = _tvCurrentPath == TvRootPath ? Visibility.Collapsed : Visibility.Visible;
         TvBreadcrumbs.Clear();
         var relative = _tvCurrentPath[TvRootPath.Length..].Trim('/');
         TvBreadcrumbs.Add(new TvBreadcrumb { Label = "Internal storage", Path = TvRootPath });
@@ -896,6 +916,102 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>
+    /// Sort menu for the TV Files grid/list toolbar button - a plain WPF
+    /// ContextMenu opened directly via IsOpen, not assigned to the button's
+    /// ContextMenu property first (a freshly-assigned ContextMenu isn't done
+    /// wiring up its logical parent/placement until the next layout pass, so
+    /// IsOpen = true in the same handler that just assigned it can be
+    /// silently dropped). This button lives in the static toolbar, not a
+    /// per-item card in a just-refreshed list, so it doesn't hit the
+    /// first-click-after-refresh issue OnTvCardRightClick's doc describes.
+    /// Picking the already-active sort mode again flips its direction
+    /// instead of being a no-op.
+    /// </summary>
+    private void OnTvSortClick(object sender, RoutedEventArgs e)
+    {
+        var button = (FrameworkElement)sender;
+        var menuItemStyle = (Style)FindResource(typeof(System.Windows.Controls.MenuItem));
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            Style = (Style)FindResource(typeof(System.Windows.Controls.ContextMenu)),
+            PlacementTarget = button,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+        };
+
+        void AddOption(string label, TvSortMode mode)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = label, Style = menuItemStyle };
+            item.Click += (_, _) => SetTvSortMode(mode);
+            menu.Items.Add(item);
+        }
+
+        AddOption("Name", TvSortMode.Name);
+        AddOption("Date modified", TvSortMode.DateModified);
+        AddOption("Size", TvSortMode.Size);
+
+        menu.IsOpen = true;
+    }
+
+    private void SetTvSortMode(TvSortMode mode)
+    {
+        if (_tvSortMode == mode)
+        {
+            _tvSortDescending = !_tvSortDescending;
+        }
+        else
+        {
+            _tvSortMode = mode;
+            // Date modified's natural "useful" direction is newest-first
+            // (new photos/screenshots at the top) - Name/Size default to
+            // ascending (A-Z, smallest-first) as before.
+            _tvSortDescending = mode == TvSortMode.DateModified;
+        }
+        SortTvFiles();
+    }
+
+    /// <summary>
+    /// Re-sorts TvFiles in place (directories always first, matching
+    /// TvAdbClient.ListAsync's own ordering) rather than replacing the
+    /// ObservableCollection instance, so bindings/selection state on
+    /// existing items aren't disturbed by the sort itself.
+    /// </summary>
+    private void SortTvFiles()
+    {
+        IEnumerable<TvFile> ordered = _tvSortMode switch
+        {
+            TvSortMode.DateModified => _tvSortDescending
+                ? TvFiles.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.ModifiedAt)
+                : TvFiles.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.ModifiedAt),
+            TvSortMode.Size => _tvSortDescending
+                ? TvFiles.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.SizeBytes)
+                : TvFiles.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.SizeBytes),
+            _ => _tvSortDescending
+                ? TvFiles.OrderByDescending(f => f.IsDirectory).ThenByDescending(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                : TvFiles.OrderByDescending(f => f.IsDirectory).ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase),
+        };
+
+        var sorted = ordered.ToList();
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var currentIndex = TvFiles.IndexOf(sorted[i]);
+            if (currentIndex != i) TvFiles.Move(currentIndex, i);
+        }
+
+        ApplyTvSortButtonLabel();
+    }
+
+    private void ApplyTvSortButtonLabel()
+    {
+        var label = _tvSortMode switch
+        {
+            TvSortMode.DateModified => "Date modified",
+            TvSortMode.Size => "Size",
+            _ => "Name",
+        };
+        TvSortButton.Content = $"Sort: {label} {(_tvSortDescending ? "↓" : "↑")}";
+    }
+
+    /// <summary>
     /// Single click handler for both list and grid cards - navigates into a
     /// folder, opens a file, or (if anything is already selected) toggles
     /// this item's selection instead, matching the phone app's "tap while
@@ -930,10 +1046,11 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
 
     private void OnTvCardPreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        // Ignore mouse-downs that originated on a button inside the card
-        // (⋮ menu, Open/Save in list view) - otherwise a slightly-imprecise
-        // double-click on ⋮ can register as a tiny drag and misfire the
-        // whole drag-out flow instead of just opening the menu twice.
+        // Ignore mouse-downs that originated on a button inside the card -
+        // no ButtonBase lives in the card templates today (the old ⋮ menu
+        // button was replaced by right-click), but this stays as a guard in
+        // case a future per-item button is added, so it doesn't misfire the
+        // drag-out flow the same way the old ⋮ button could have.
         if (e.OriginalSource is DependencyObject d && FindAncestor<System.Windows.Controls.Primitives.ButtonBase>(d) != null) return;
         _tvDragStartPoint = e.GetPosition(null);
         _tvDidDrag = false;
@@ -1054,7 +1171,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         if (failures > 0) AppDialog.ShowInfo($"{failures} of {files.Count} item(s) couldn't be deleted.", "TV Files");
     }
 
-    private async void OnTvUpClick(object sender, RoutedEventArgs e)
+    private async void OnTvUpClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (_tvCurrentPath == TvRootPath) return;
         var parent = _tvCurrentPath.TrimEnd('/');
@@ -1095,54 +1212,65 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>
-    /// Small context menu built in code rather than XAML ContextMenu on the
-    /// button - lets Rename/Delete be assembled with the same click handlers
-    /// as the rest of this file instead of duplicating logic in XAML.
+    /// Per-item Open/Save as/Rename/Delete menu, triggered by right-clicking
+    /// anywhere on the card - not a ⋮ button. The button approach (both a
+    /// WPF ContextMenu/Popup and a hand-rolled in-tree overlay) reliably
+    /// failed on the very first click after a folder loads: confirmed via
+    /// hit-test tracing that WPF's own hit-testing resolved that first click
+    /// to the card's outer Border, not the button, even though the button
+    /// was already visibly rendered there - a genuine WPF hit-test/timing
+    /// quirk with a just-added small button, not a bug in this app's code,
+    /// and nothing short of removing the button fixed it. Right-click uses
+    /// WPF's own native context-menu input handling (a completely different,
+    /// long-established code path from Button.Click), and targets the whole
+    /// card rather than one small button, so there's no small hit-test
+    /// target to land wrong on in the first place.
     /// </summary>
-    private void OnTvMenuClick(object sender, RoutedEventArgs e)
+    private void OnTvCardRightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not TvFile file) return;
-        var button = (FrameworkElement)sender;
+        var card = (FrameworkElement)sender;
 
         var menuItemStyle = (Style)FindResource(typeof(System.Windows.Controls.MenuItem));
         var menu = new System.Windows.Controls.ContextMenu
         {
             Style = (Style)FindResource(typeof(System.Windows.Controls.ContextMenu)),
-            PlacementTarget = button,
-            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            PlacementTarget = card,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint,
         };
+
+        void AddOption(string label, Action onClick, bool isDestructive = false)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = label, Style = menuItemStyle };
+            if (isDestructive)
+            {
+                item.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF6B5E"));
+            }
+            item.Click += (_, _) => onClick();
+            menu.Items.Add(item);
+        }
+
         if (!file.IsDirectory)
         {
-            var open = new System.Windows.Controls.MenuItem { Header = "Open", Style = menuItemStyle };
-            open.Click += async (_, _) => await OpenTvFileAsync(file);
-            menu.Items.Add(open);
-
-            var save = new System.Windows.Controls.MenuItem { Header = "Save as…", Style = menuItemStyle };
-            save.Click += async (_, _) =>
+            AddOption("Open", () => _ = OpenTvFileAsync(file));
+            AddOption("Save as…", () =>
             {
                 var dialog = new Microsoft.Win32.SaveFileDialog { FileName = file.Name };
                 if (dialog.ShowDialog() != true) return;
-                var result = await App.TvAdbClient.PullAsync(file.Path, dialog.FileName);
-                if (!result.IsSuccess) AppDialog.ShowInfo($"Download failed: {result.ErrorMessage}", "TV Files");
-            };
-            menu.Items.Add(save);
+                _ = SaveTvFileAsAsync(file, dialog.FileName);
+            });
         }
+        AddOption("Rename", () => _ = RenameTvFileAsync(file));
+        AddOption("Delete", () => _ = DeleteTvFileAsync(file), isDestructive: true);
 
-        var rename = new System.Windows.Controls.MenuItem { Header = "Rename", Style = menuItemStyle };
-        rename.Click += async (_, _) => await RenameTvFileAsync(file);
-        menu.Items.Add(rename);
-
-        var delete = new System.Windows.Controls.MenuItem
-        {
-            Header = "Delete",
-            Style = menuItemStyle,
-            Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF6B5E")),
-        };
-        delete.Click += async (_, _) => await DeleteTvFileAsync(file);
-        menu.Items.Add(delete);
-
-        button.ContextMenu = menu;
         menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private async Task SaveTvFileAsAsync(TvFile file, string destinationPath)
+    {
+        var result = await App.TvAdbClient.PullAsync(file.Path, destinationPath);
+        if (!result.IsSuccess) AppDialog.ShowInfo($"Download failed: {result.ErrorMessage}", "TV Files");
     }
 
     private async Task RenameTvFileAsync(TvFile file)

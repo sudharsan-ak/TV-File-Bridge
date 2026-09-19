@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -17,6 +18,10 @@ public class TvFile : INotifyPropertyChanged
     public string Path { get; set; } = "";
     public bool IsDirectory { get; set; }
     public long SizeBytes { get; set; }
+    // Parsed from "ls -la"'s date/time columns - DateTime.MinValue when that
+    // parse fails, so sorting by date still works (falls to the back) rather
+    // than throwing.
+    public DateTime ModifiedAt { get; set; } = DateTime.MinValue;
 
     private string Extension => Name.Contains('.') ? Name[(Name.LastIndexOf('.') + 1)..] : "";
     public bool IsImage => !IsDirectory && ImageExtensions.Contains(Extension);
@@ -413,6 +418,11 @@ public class TvAdbClient
         var isDirectory = perms.StartsWith('d');
         if (!long.TryParse(parts[4], out var size)) return null;
 
+        // Columns 5 and 6 are the date and time (e.g. "2024-03-11 14:07") on
+        // Android's toolbox/toybox "ls -la" - best-effort parse, falls back
+        // to MinValue (sorts to the back) rather than failing the whole row.
+        DateTime.TryParse($"{parts[5]} {parts[6]}", CultureInfo.InvariantCulture, DateTimeStyles.None, out var modifiedAt);
+
         // Name is everything after the fixed date/time columns (index 7
         // onward), joined back together, so filenames containing spaces
         // still parse correctly.
@@ -420,7 +430,7 @@ public class TvAdbClient
         if (name == "." || name == "..") return null;
 
         var fullPath = parentPath.TrimEnd('/') + "/" + name;
-        return new TvFile { Name = name, Path = fullPath, IsDirectory = isDirectory, SizeBytes = isDirectory ? 0 : size };
+        return new TvFile { Name = name, Path = fullPath, IsDirectory = isDirectory, SizeBytes = isDirectory ? 0 : size, ModifiedAt = modifiedAt };
     }
 }
 

@@ -28,6 +28,29 @@ public class BoolToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>
+/// Fill for the per-card multi-select checkbox circle - solid teal once
+/// selected, transparent otherwise. Previously this was a fixed XAML brush
+/// (a 35%-alpha black wash in the grid view, plain SurfaceBrush in the list
+/// view) with the checkmark drawn in that same SurfaceBrush color, so the
+/// checkmark only ever stood out by accident depending on what was showing
+/// through underneath (e.g. a photo thumbnail) rather than reliably being
+/// visible on every selected card.
+/// </summary>
+public class BoolToSelectedCircleBackgroundConverter : IValueConverter
+{
+    private static readonly System.Windows.Media.SolidColorBrush SelectedBrush =
+        new((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#37C6B0"));
+    private static readonly System.Windows.Media.SolidColorBrush UnselectedBrush =
+        new((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#590B1615"));
+
+    public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)
+        => value is true ? SelectedBrush : UnselectedBrush;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 public class InverseBoolToVisibilityConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)

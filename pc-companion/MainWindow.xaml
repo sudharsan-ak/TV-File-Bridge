@@ -13,6 +13,7 @@
         <local:ClipboardItemTypeToVisibilityConverter x:Key="FileVisibility" ShowFor="File"/>
         <local:ImagePathToBitmapConverter x:Key="ImagePathToBitmap"/>
         <local:BoolToVisibilityConverter x:Key="BoolVisibility"/>
+        <local:BoolToSelectedCircleBackgroundConverter x:Key="SelectedCircleBackground"/>
         <local:InverseBoolToVisibilityConverter x:Key="InverseBoolVisibility"/>
         <local:PrimaryButtonLabelConverter x:Key="PrimaryButtonLabel"/>
         <local:TransferStatusToVisibilityConverter x:Key="TransferInProgressVisibility" ShowFor="InProgress"/>
@@ -215,6 +216,43 @@
             <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
 
+        <!-- Home screen's clickable nav-shortcut cards - same shape as
+             CardBorder plus a hover highlight + slight scale-up, so hovering
+             signals "this is clickable" the way the plain CardBorder (used
+             for non-clickable cards elsewhere, e.g. Transfers/History) never
+             needed to. RenderTransformOrigin centers the scale so it grows
+             evenly instead of shifting toward one corner. -->
+        <Style x:Key="HomeNavCard" TargetType="Border" BasedOn="{StaticResource CardBorder}">
+            <Setter Property="Margin" Value="0,0,10,10"/>
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource HairlineBrush}"/>
+                    <Trigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX" To="1.02" Duration="0:0:0.12"/>
+                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY" To="1.02" Duration="0:0:0.12"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.12"/>
+                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.12"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.ExitActions>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Shared by both Sent and Received sub-tabs under Transfers - same
              card shape either way, "with {OtherDeviceName}" reads correctly
              regardless of direction so no separate templates are needed. -->
@@ -273,55 +311,67 @@
         <Border x:Name="NavDivider" Grid.Column="0" Background="{StaticResource HairlineBrush}" Width="1" HorizontalAlignment="Right" Margin="0,8,0,8" Visibility="Collapsed"/>
 
         <DockPanel Grid.Column="1" Margin="16,0,0,0" PreviewMouseDown="OnContentAreaPreviewMouseDown">
-        <Button DockPanel.Dock="Top" x:Name="NavToggleButton" Content="☰" Style="{StaticResource FlatButton}" HorizontalAlignment="Left"
-                Padding="10,6" Margin="0,0,0,12" Click="OnNavToggleClick" ToolTip="Show/hide navigation"/>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button x:Name="NavToggleButton" Content="☰" Style="{StaticResource FlatButton}"
+                    Padding="10,6" Click="OnNavToggleClick" ToolTip="Show/hide navigation"/>
+            <Button Content="🏠" Style="{StaticResource FlatButton}" Padding="10,6" Margin="6,0,0,0"
+                    Click="OnHomeButtonClick" ToolTip="Home"/>
+        </StackPanel>
         <Grid>
-        <StackPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavHome, Converter={StaticResource BoolVisibility}}">
+        <ScrollViewer VerticalScrollBarVisibility="Hidden" Visibility="{Binding IsChecked, ElementName=NavHome, Converter={StaticResource BoolVisibility}}">
+        <StackPanel Margin="0,16,0,0">
             <TextBlock Text="TV File Bridge" FontSize="22" FontWeight="Bold"/>
             <TextBlock Text="Clipboard and file sync between this PC and your phone/TV setup." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,20"/>
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="Devices" FontWeight="Bold"/>
-                    <TextBlock Text="Phones paired with this PC for clipboard and file sync." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="Transfers" FontWeight="Bold"/>
-                    <TextBlock Text="Files sent and received between this PC and your phone." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="TV Files" FontWeight="Bold"/>
-                    <TextBlock Text="Browse and download files straight from your TV over ADB." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="Screen View" FontWeight="Bold"/>
-                    <TextBlock Text="Mirror a TV's screen on this PC." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="Remote" FontWeight="Bold"/>
-                    <TextBlock Text="D-pad, volume, power, and app launcher for the connected TV." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="History" FontWeight="Bold"/>
-                    <TextBlock Text="Everything copied or sent between this PC and your devices." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="Settings" FontWeight="Bold"/>
-                    <TextBlock Text="Device name, port, startup behavior, and auto-send rules." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
+            <!-- WrapPanel, not a fixed StackPanel - cards wrap onto as many
+                 columns as the window is wide enough for (2-3 on a wide
+                 window, 1 on a narrow one), adjusting live as the window is
+                 resized with no extra layout logic needed. -->
+            <WrapPanel Orientation="Horizontal">
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavDevices}">
+                    <StackPanel>
+                        <TextBlock Text="Devices" FontWeight="Bold"/>
+                        <TextBlock Text="Phones paired with this PC for clipboard and file sync." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavTransfers}">
+                    <StackPanel>
+                        <TextBlock Text="Transfers" FontWeight="Bold"/>
+                        <TextBlock Text="Files sent and received between this PC and your phone." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavTvFiles}">
+                    <StackPanel>
+                        <TextBlock Text="TV Files" FontWeight="Bold"/>
+                        <TextBlock Text="Browse and download files straight from your TV over ADB." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavScreenView}">
+                    <StackPanel>
+                        <TextBlock Text="Screen View" FontWeight="Bold"/>
+                        <TextBlock Text="Mirror a TV's screen on this PC." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavRemote}">
+                    <StackPanel>
+                        <TextBlock Text="Remote" FontWeight="Bold"/>
+                        <TextBlock Text="D-pad, volume, power, and app launcher for the connected TV." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavHistory}">
+                    <StackPanel>
+                        <TextBlock Text="History" FontWeight="Bold"/>
+                        <TextBlock Text="Everything copied or sent between this PC and your devices." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavSettings}">
+                    <StackPanel>
+                        <TextBlock Text="Settings" FontWeight="Bold"/>
+                        <TextBlock Text="Device name, port, startup behavior, and auto-send rules." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+            </WrapPanel>
         </StackPanel>
+        </ScrollViewer>
         <DockPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavHistory, Converter={StaticResource BoolVisibility}}">
                 <Button DockPanel.Dock="Top" Content="Clear all" Style="{StaticResource FlatButton}"
                         HorizontalAlignment="Right" Margin="0,0,0,12" Click="OnClearAllClick"/>
@@ -495,7 +545,10 @@
                     <Button DockPanel.Dock="Right" Content="Connect new TV" Style="{StaticResource FlatButton}" Click="OnTvConnectNewClick"/>
                     <Button DockPanel.Dock="Right" Content="Upload" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvUploadClick"/>
                     <Button x:Name="TvViewModeButton" DockPanel.Dock="Right" Content="List view" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvToggleViewModeClick"/>
-                    <ItemsControl ItemsSource="{Binding TvBreadcrumbs}">
+                    <Button x:Name="TvSortButton" DockPanel.Dock="Right" Content="Sort: Name ↑" Style="{StaticResource FlatButton}" Margin="0,0,6,0" Click="OnTvSortClick"/>
+                    <TextBlock x:Name="TvUpButton" Text="←" Foreground="{StaticResource TealBrush}" FontSize="12" VerticalAlignment="Center"
+                               Cursor="Hand" MouseLeftButtonUp="OnTvUpClick" Margin="0,0,8,0" ToolTip="Up one folder" Visibility="Collapsed"/>
+                    <ItemsControl ItemsSource="{Binding TvBreadcrumbs}" VerticalAlignment="Center">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <StackPanel Orientation="Horizontal"/>
@@ -533,29 +586,32 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Style="{StaticResource CardBorder}" Cursor="Hand" MouseLeftButtonUp="OnTvFileClick"
-                                        PreviewMouseLeftButtonDown="OnTvCardPreviewMouseDown" PreviewMouseMove="OnTvCardPreviewMouseMove" Tag="{Binding}">
+                                        PreviewMouseLeftButtonDown="OnTvCardPreviewMouseDown" PreviewMouseMove="OnTvCardPreviewMouseMove"
+                                        MouseRightButtonUp="OnTvCardRightClick" Tag="{Binding}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <Border Grid.Column="0" Width="20" Height="20" CornerRadius="999" Margin="0,0,10,0"
                                                 BorderBrush="{StaticResource MutedTextBrush}" BorderThickness="2"
-                                                Background="{StaticResource SurfaceBrush}" Cursor="Hand"
+                                                Background="{Binding IsSelected, Converter={StaticResource SelectedCircleBackground}}" Cursor="Hand"
                                                 MouseLeftButtonUp="OnTvCheckboxClick" Tag="{Binding}"
                                                 Visibility="{Binding DataContext.IsTvSelecting, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}">
+                                            <!-- White-on-teal, not SurfaceBrush-on-SurfaceBrush - the checkmark
+                                                 used to be rendered in the same color as its own circle fill,
+                                                 so it was only ever visible thanks to the border ring, and in
+                                                 the grid view (semi-transparent circle over a thumbnail) it
+                                                 blended into whatever was under it and looked like it wasn't
+                                                 rendering on some cards at all. -->
                                             <TextBlock Text="✓" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                       Foreground="{StaticResource SurfaceBrush}" FontWeight="Bold"
+                                                       Foreground="White" FontWeight="Bold"
                                                        Visibility="{Binding IsSelected, Converter={StaticResource BoolVisibility}}"/>
                                         </Border>
                                         <StackPanel Grid.Column="1">
                                             <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Text="Folder" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,2,0,0"
                                                        Visibility="{Binding IsDirectory, Converter={StaticResource BoolVisibility}}"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                            <Button Content="⋮" Style="{StaticResource FlatButton}" Padding="10,4" Click="OnTvMenuClick" Tag="{Binding}"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -576,6 +632,7 @@
                                 <Border Style="{StaticResource CardBorder}" Width="140" Cursor="Hand"
                                         MouseLeftButtonUp="OnTvFileClick"
                                         PreviewMouseLeftButtonDown="OnTvCardPreviewMouseDown" PreviewMouseMove="OnTvCardPreviewMouseMove"
+                                        MouseRightButtonUp="OnTvCardRightClick"
                                         Tag="{Binding}" Margin="0,0,10,10" Padding="10">
                                     <StackPanel>
                                         <Border Height="90" CornerRadius="8" ClipToBounds="True" Background="{StaticResource SurfaceBrush}">
@@ -592,17 +649,22 @@
                                                        Stretch="UniformToFill"
                                                        Visibility="{Binding IsImage, Converter={StaticResource BoolVisibility}}"/>
                                                 <Border Width="22" Height="22" CornerRadius="999" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
-                                                        BorderBrush="White" BorderThickness="2" Background="#590B1615" Cursor="Hand"
+                                                        BorderBrush="White" BorderThickness="2"
+                                                        Background="{Binding IsSelected, Converter={StaticResource SelectedCircleBackground}}" Cursor="Hand"
                                                         MouseLeftButtonUp="OnTvCheckboxClick" Tag="{Binding}"
                                                         Visibility="{Binding DataContext.IsTvSelecting, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}">
+                                                    <!-- Solid teal fill once selected instead of a fixed 35%-alpha
+                                                         black wash - previously the checkmark (drawn in the same
+                                                         dark SurfaceBrush color) sat over whatever thumbnail color
+                                                         showed through, so it read as "missing" on darker photos
+                                                         and only showed up by accident on lighter ones. -->
                                                     <TextBlock Text="✓" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                               Foreground="{StaticResource SurfaceBrush}" FontWeight="Bold"
+                                                               Foreground="White" FontWeight="Bold"
                                                                Visibility="{Binding IsSelected, Converter={StaticResource BoolVisibility}}"/>
                                                 </Border>
                                             </Grid>
                                         </Border>
                                         <DockPanel Margin="0,8,0,0">
-                                            <Button DockPanel.Dock="Right" Content="⋮" Style="{StaticResource FlatButton}" Padding="6,2" FontSize="13" Click="OnTvMenuClick" Tag="{Binding}"/>
                                             <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{StaticResource AmberBrush}"
                                                        FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                         </DockPanel>
