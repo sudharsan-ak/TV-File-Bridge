@@ -345,6 +345,12 @@
                         <TextBlock Text="Browse and download files straight from your TV over ADB." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
+                <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavInstallApk}">
+                    <StackPanel>
+                        <TextBlock Text="Install APK" FontWeight="Bold"/>
+                        <TextBlock Text="Sideload an APK file straight onto the connected TV." Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
                 <Border Style="{StaticResource HomeNavCard}" Width="240" Cursor="Hand" MouseLeftButtonUp="OnHomeCardClick" Tag="{Binding ElementName=NavScreenView}">
                     <StackPanel>
                         <TextBlock Text="Screen View" FontWeight="Bold"/>
