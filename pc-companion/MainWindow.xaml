@@ -209,6 +209,21 @@
             </Setter>
         </Style>
 
+        <!-- Install APK's drag-and-drop target - Idle is the default dashed
+             border, Hover (swapped in via code-behind on DragEnter/Leave,
+             same approach as the existing TvDropOverlay) highlights teal
+             while a file is being dragged over it. -->
+        <Style x:Key="ApkDropZoneIdle" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{StaticResource HairlineBrush}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="Padding" Value="36,28"/>
+        </Style>
+        <Style x:Key="ApkDropZoneHover" TargetType="Border" BasedOn="{StaticResource ApkDropZoneIdle}">
+            <Setter Property="BorderBrush" Value="{StaticResource TealBrush}"/>
+            <Setter Property="Background" Value="#1437C6B0"/>
+        </Style>
+
         <Style x:Key="CardBorder" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBrush}"/>
             <Setter Property="CornerRadius" Value="14"/>
@@ -987,17 +1002,139 @@
             </StackPanel>
 
             <StackPanel Visibility="{Binding IsTvConnectedForInstall, Converter={StaticResource BoolVisibility}}">
-                <Button x:Name="PickApkButton" Content="Choose APK…" Style="{StaticResource AccentButton}" HorizontalAlignment="Left" Click="OnPickApkClick"/>
 
-                <Border Style="{StaticResource CardBorder}" Margin="0,16,0,0" Visibility="{Binding HasApkInstallStatus, Converter={StaticResource BoolVisibility}}">
-                    <StackPanel>
-                        <TextBlock Text="{Binding ApkInstallFileName}" FontWeight="Bold"/>
-                        <ProgressBar Height="6" Minimum="0" Maximum="100" Value="{Binding ApkInstallProgress, Mode=OneWay}"
-                                     Foreground="{StaticResource TealBrush}" Background="{StaticResource SurfaceBrush}" BorderThickness="0"
-                                     Margin="0,8,0,8" Visibility="{Binding IsApkInstalling, Converter={StaticResource BoolVisibility}}"/>
-                        <TextBlock Text="{Binding ApkInstallStatusText}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap"/>
+                <!-- Stage 1: drop zone / picker - shown when the queue is empty. -->
+                <Border x:Name="ApkDropZone" Style="{StaticResource ApkDropZoneIdle}"
+                        AllowDrop="True" DragEnter="OnApkDropZoneDragEnter" DragLeave="OnApkDropZoneDragLeave" Drop="OnApkDropZoneDrop"
+                        Visibility="{Binding IsApkDropZone, Converter={StaticResource BoolVisibility}}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="📦" FontSize="30" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                        <TextBlock Text="Drag &amp; drop one or more APKs here" FontWeight="Bold" HorizontalAlignment="Center"/>
+                        <TextBlock Text="or" Foreground="{StaticResource MutedTextBrush}" FontSize="12" HorizontalAlignment="Center" Margin="0,6,0,14"/>
+                        <Button Content="Choose APK…" Style="{StaticResource AccentButton}" HorizontalAlignment="Center" Click="OnPickApkClick"/>
                     </StackPanel>
                 </Border>
+
+                <!-- Stage 2: confirm/queue review - same list for one file or many, with a remove (✕) per row. -->
+                <StackPanel Visibility="{Binding IsApkConfirming, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="{Binding ApkInstallTargetLabel}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,0,0,12"/>
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <ItemsControl ItemsSource="{Binding ApkQueue}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1" Padding="0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding FileName}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding SizeLabel}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,2,0,0"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="✕" Style="{StaticResource FlatButton}" Padding="8,4"
+                                                        Click="OnApkQueueRemoveClick" Tag="{Binding}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                                <Button Content="Cancel" Style="{StaticResource FlatButton}" Margin="0,0,8,0" Click="OnApkQueueCancelClick"/>
+                                <Button Content="{Binding ApkInstallButtonLabel}" Style="{StaticResource AccentButton}" Click="OnApkQueueInstallClick"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Stage 3: installing - same queue, now showing per-item progress instead of a remove button. -->
+                <StackPanel Visibility="{Binding IsApkInstalling, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="{Binding ApkInstallTargetLabel}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,0,0,12"/>
+                    <Border Style="{StaticResource CardBorder}">
+                        <ItemsControl ItemsSource="{Binding ApkQueue}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1" Padding="0,10">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Margin="0,0,10,0" FontWeight="Bold" VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="…"/>
+                                                            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                                    <Setter Property="Text" Value="✓"/>
+                                                                    <Setter Property="Foreground" Value="{StaticResource TealBrush}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsFailed}" Value="True">
+                                                                    <Setter Property="Text" Value="!"/>
+                                                                    <Setter Property="Foreground" Value="#FF6B5E"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsInstalling}" Value="True">
+                                                                    <Setter Property="Text" Value="↻"/>
+                                                                    <Setter Property="Foreground" Value="{StaticResource AmberBrush}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Text="{Binding FileName}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
+                                                         Foreground="{StaticResource TealBrush}" Background="{StaticResource SurfaceBrush}" BorderThickness="0"
+                                                         Margin="0,8,0,0" Visibility="{Binding IsInstalling, Converter={StaticResource BoolVisibility}}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                </StackPanel>
+
+                <!-- Stage 4: done - summary, then Done returns to the drop zone. -->
+                <StackPanel Visibility="{Binding IsApkDone, Converter={StaticResource BoolVisibility}}">
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock FontWeight="Bold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="{Binding ApkInstalledCount, StringFormat='{}{0} installed'}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasApkFailures}" Value="True">
+                                                <Setter Property="Text">
+                                                    <Setter.Value>
+                                                        <MultiBinding StringFormat="{}{0} installed, {1} failed">
+                                                            <Binding Path="ApkInstalledCount"/>
+                                                            <Binding Path="ApkFailedCount"/>
+                                                        </MultiBinding>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ItemsControl ItemsSource="{Binding ApkQueue}" Margin="0,10,0,0" Visibility="{Binding HasApkFailures, Converter={StaticResource BoolVisibility}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StatusText}" Foreground="#FF6B5E" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                   Visibility="{Binding IsFailed, Converter={StaticResource BoolVisibility}}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="Done" Style="{StaticResource FlatButton}" HorizontalAlignment="Left" Margin="0,14,0,0" Click="OnApkQueueDoneClick"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </StackPanel>
         </StackPanel>
         </Grid>

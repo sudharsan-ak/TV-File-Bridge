@@ -83,34 +83,49 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     public bool IsCursorReady => IsCursorCompanionInstalled == true;
     public bool IsCursorNotReady => IsCursorCompanionInstalled == false;
 
-    private string? _apkInstallFileName;
-    public string? ApkInstallFileName
-    {
-        get => _apkInstallFileName;
-        set { _apkInstallFileName = value; OnPropertyChanged(nameof(ApkInstallFileName)); OnPropertyChanged(nameof(HasApkInstallStatus)); }
-    }
-    public bool HasApkInstallStatus => ApkInstallFileName != null;
+    // Install APK page state machine: DropZone (nothing queued) -> Confirming
+    // (reviewing/removing before committing) -> Installing (running through
+    // the queue one at a time, matching adb install's own one-device-at-a-
+    // time serial behavior) -> Done (summary, dismiss to return to DropZone).
+    public enum ApkPageStage { DropZone, Confirming, Installing, Done }
 
-    private bool _isApkInstalling;
-    public bool IsApkInstalling
+    private ApkPageStage _apkStage = ApkPageStage.DropZone;
+    public ApkPageStage ApkStage
     {
-        get => _isApkInstalling;
-        set { _isApkInstalling = value; OnPropertyChanged(nameof(IsApkInstalling)); }
+        get => _apkStage;
+        set
+        {
+            _apkStage = value;
+            OnPropertyChanged(nameof(ApkStage));
+            OnPropertyChanged(nameof(IsApkDropZone));
+            OnPropertyChanged(nameof(IsApkConfirming));
+            OnPropertyChanged(nameof(IsApkInstalling));
+            OnPropertyChanged(nameof(IsApkDone));
+        }
+    }
+    public bool IsApkDropZone => ApkStage == ApkPageStage.DropZone;
+    public bool IsApkConfirming => ApkStage == ApkPageStage.Confirming;
+    public bool IsApkInstalling => ApkStage == ApkPageStage.Installing;
+    public bool IsApkDone => ApkStage == ApkPageStage.Done;
+
+    public BulkObservableCollection<ApkQueueItem> ApkQueue { get; } = new();
+    public string ApkInstallButtonLabel => ApkQueue.Count == 1 ? "Install" : $"Install all {ApkQueue.Count}";
+    public string ApkInstallTargetLabel => $"📺 Installing to {App.TvAdbClient.ConnectedHost}";
+
+    private int _apkInstalledCount;
+    public int ApkInstalledCount
+    {
+        get => _apkInstalledCount;
+        set { _apkInstalledCount = value; OnPropertyChanged(nameof(ApkInstalledCount)); }
     }
 
-    private double _apkInstallProgress;
-    public double ApkInstallProgress
+    private int _apkFailedCount;
+    public int ApkFailedCount
     {
-        get => _apkInstallProgress;
-        set { _apkInstallProgress = value; OnPropertyChanged(nameof(ApkInstallProgress)); }
+        get => _apkFailedCount;
+        set { _apkFailedCount = value; OnPropertyChanged(nameof(ApkFailedCount)); OnPropertyChanged(nameof(HasApkFailures)); }
     }
-
-    private string? _apkInstallStatusText;
-    public string? ApkInstallStatusText
-    {
-        get => _apkInstallStatusText;
-        set { _apkInstallStatusText = value; OnPropertyChanged(nameof(ApkInstallStatusText)); }
-    }
+    public bool HasApkFailures => ApkFailedCount > 0;
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 
@@ -521,36 +536,116 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         if (NavColumn.Width.Value > 0) SetNavCollapsed(true);
     }
 
-    private async void OnPickApkClick(object sender, RoutedEventArgs e)
+    private void OnPickApkClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Android package (*.apk)|*.apk" };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Android package (*.apk)|*.apk", Multiselect = true };
         if (dialog.ShowDialog() != true) return;
+        AddApksToQueue(dialog.FileNames);
+    }
 
-        PickApkButton.IsEnabled = false;
-        ApkInstallFileName = Path.GetFileName(dialog.FileName);
-        IsApkInstalling = true;
-        ApkInstallProgress = 0;
-        ApkInstallStatusText = "Uploading…";
+    private void OnApkDropZoneDragEnter(object sender, System.Windows.DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)) return;
+        ApkDropZone.Style = (Style)FindResource("ApkDropZoneHover");
+    }
 
-        var result = await App.TvAdbClient.InstallApkAsync(dialog.FileName, args =>
+    private void OnApkDropZoneDragLeave(object sender, System.Windows.DragEventArgs e)
+    {
+        ApkDropZone.Style = (Style)FindResource("ApkDropZoneIdle");
+    }
+
+    private void OnApkDropZoneDrop(object sender, System.Windows.DragEventArgs e)
+    {
+        ApkDropZone.Style = (Style)FindResource("ApkDropZoneIdle");
+        if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is not string[] paths) return;
+        AddApksToQueue(paths);
+    }
+
+    /// <summary>
+    /// Shared entry point for both "Choose APK…" and drag-drop - filters to
+    /// .apk files that actually exist (a drop can include non-APK files,
+    /// e.g. dropping a whole folder's worth of mixed content), adds each as
+    /// a new ApkQueueItem, and always lands on the Confirming stage next so
+    /// nothing installs without the review step - even a single dropped file
+    /// stops here first, matching the single-file confirm design.
+    /// </summary>
+    private void AddApksToQueue(IEnumerable<string> paths)
+    {
+        var apks = paths.Where(p => File.Exists(p) && Path.GetExtension(p).Equals(".apk", StringComparison.OrdinalIgnoreCase));
+        foreach (var path in apks) ApkQueue.Add(new ApkQueueItem(path));
+        if (ApkQueue.Count > 0) ApkStage = ApkPageStage.Confirming;
+        OnPropertyChanged(nameof(ApkInstallButtonLabel));
+    }
+
+    private void OnApkQueueRemoveClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ApkQueueItem item) return;
+        ApkQueue.Remove(item);
+        if (ApkQueue.Count == 0) ApkStage = ApkPageStage.DropZone;
+        OnPropertyChanged(nameof(ApkInstallButtonLabel));
+    }
+
+    private void OnApkQueueCancelClick(object sender, RoutedEventArgs e)
+    {
+        ApkQueue.Clear();
+        ApkStage = ApkPageStage.DropZone;
+    }
+
+    /// <summary>
+    /// Installs every queued APK strictly one at a time (adb install only
+    /// ever talks to one device serially anyway, so there's no throughput
+    /// lost by not parallelizing) - a failure on one item doesn't stop the
+    /// rest of the queue, it's just marked Failed and the loop continues.
+    /// </summary>
+    private async void OnApkQueueInstallClick(object sender, RoutedEventArgs e)
+    {
+        ApkStage = ApkPageStage.Installing;
+        ApkInstalledCount = 0;
+        ApkFailedCount = 0;
+
+        foreach (var item in ApkQueue)
         {
-            Dispatcher.Invoke(() =>
-            {
-                ApkInstallProgress = args.UploadProgress;
-                ApkInstallStatusText = args.State switch
-                {
-                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.Preparing => "Preparing…",
-                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.Uploading => $"Uploading… {args.UploadProgress:0}%",
-                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.Installing => "Installing on TV…",
-                    AdvancedSharpAdbClient.Models.PackageInstallProgressState.PostInstall => "Finishing up…",
-                    _ => ApkInstallStatusText,
-                };
-            });
-        });
+            item.Status = ApkQueueItemStatus.Installing;
+            item.Progress = 0;
+            item.StatusText = "Uploading…";
 
-        IsApkInstalling = false;
-        PickApkButton.IsEnabled = true;
-        ApkInstallStatusText = result.IsSuccess ? "Installed successfully." : $"Install failed: {result.ErrorMessage}";
+            var result = await App.TvAdbClient.InstallApkAsync(item.LocalPath, args =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    item.Progress = args.UploadProgress;
+                    item.StatusText = args.State switch
+                    {
+                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.Preparing => "Preparing…",
+                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.Uploading => $"Uploading… {args.UploadProgress:0}%",
+                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.Installing => "Installing on TV…",
+                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.PostInstall => "Finishing up…",
+                        _ => item.StatusText,
+                    };
+                });
+            });
+
+            if (result.IsSuccess)
+            {
+                item.Status = ApkQueueItemStatus.Installed;
+                item.StatusText = "Installed";
+                ApkInstalledCount++;
+            }
+            else
+            {
+                item.Status = ApkQueueItemStatus.Failed;
+                item.StatusText = $"Failed — {result.ErrorMessage}";
+                ApkFailedCount++;
+            }
+        }
+
+        ApkStage = ApkPageStage.Done;
+    }
+
+    private void OnApkQueueDoneClick(object sender, RoutedEventArgs e)
+    {
+        ApkQueue.Clear();
+        ApkStage = ApkPageStage.DropZone;
     }
 
     private void OnClearAllClick(object sender, RoutedEventArgs e)
