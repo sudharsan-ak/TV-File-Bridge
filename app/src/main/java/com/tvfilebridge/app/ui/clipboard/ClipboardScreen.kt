@@ -438,11 +438,81 @@ private fun AddPcDeviceDialog(
     var port by remember { mutableStateOf("58821") }
     val scope = rememberCoroutineScope()
 
+    var isScanning by remember { mutableStateOf(false) }
+    var hasScanned by remember { mutableStateOf(false) }
+    var results by remember { mutableStateOf<List<com.tvfilebridge.app.discovery.DiscoveredPc>>(emptyList()) }
+
+    fun scan() {
+        scope.launch {
+            isScanning = true
+            results = container.pcDiscovery.scan()
+            isScanning = false
+            hasScanned = true
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) { scan() }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add PC") },
         text = {
             Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Nearby PCs",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (isScanning) {
+                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    } else {
+                        TextButton(onClick = { scan() }) { Text("Rescan") }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                when {
+                    isScanning ->
+                        Text(
+                            "Scanning your Wi-Fi network for PC Companion…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    results.isEmpty() && hasScanned ->
+                        Text(
+                            "No PCs found. Make sure PC Companion is running there, then enter its IP manually below.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    else -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        results.forEach { pc ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable {
+                                        host = pc.host
+                                        port = "58821"
+                                    }
+                                    .padding(vertical = 8.dp, horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Filled.Computer,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(pc.host, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

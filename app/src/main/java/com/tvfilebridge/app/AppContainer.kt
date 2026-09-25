@@ -44,6 +44,7 @@ class AppContainer(val appContext: Context) {
     val connectionManager = AdbConnectionManager(appContext, connectionModeStore)
     val deviceStore = DeviceStore(appContext)
     val tvDiscovery = TvDiscovery(appContext)
+    val pcDiscovery = com.tvfilebridge.app.discovery.PcDiscovery(appContext)
     val fileRepository = FileRepository(connectionManager)
     val transferManager = TransferManager(appContext, connectionManager)
     val thumbnailRepository = ThumbnailRepository(appContext, connectionManager)

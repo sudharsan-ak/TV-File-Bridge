@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -27,8 +29,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -48,7 +53,9 @@ import com.tvfilebridge.app.ui.screens.ConnectionStatusChip
 import com.tvfilebridge.app.ui.settings.SettingsScreen
 import com.tvfilebridge.app.ui.sync.SyncFoldersScreen
 import com.tvfilebridge.app.ui.transfers.TransfersScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val SETTINGS_ROUTE = "settings"
 private const val CLIPBOARD_ROUTE = "clipboard"
@@ -90,10 +97,63 @@ fun AppScaffold(container: AppContainer) {
                         .padding(16.dp),
                 )
                 val connectionState by container.connectionManager.state.collectAsState()
+                val devicesForChip by container.deviceStore.devices.collectAsState(initial = emptyList())
+                // Same host+port match as everywhere else that resolves a SavedDevice by connection -
+                // "Connected to 192.168.4.21" isn't useful once you have more than one or two TVs, so
+                // this shows the device's own name (e.g. "AK's Sony TV") when a saved entry matches.
+                val connectedDeviceName = (connectionState as? com.tvfilebridge.app.connection.ConnectionState.Connected)?.let { connected ->
+                    devicesForChip.find { it.host == connected.host && it.port == connected.port }?.name
+                }
                 ConnectionStatusChip(
                     connectionState,
+                    deviceName = connectedDeviceName,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
+                // PC sync has no live "connected" state the way the TV does
+                // (ClipboardReceiverServer just listens; there's no
+                // outbound handshake to track) - the primary PC (Devices ->
+                // PC Sync's own "primary" flag) is the closest honest
+                // equivalent to show here.
+                val pcDevices by container.pcDeviceStore.devices.collectAsState(initial = emptyList())
+                val primaryPc = pcDevices.find { it.isPrimary }
+                if (primaryPc != null) {
+                    // Same "is something actually listening" TCP probe as
+                    // PcDiscovery's scan, just against this one known
+                    // host:port instead of sweeping the subnet - re-checked
+                    // every few seconds so the pill's teal color means
+                    // "reachable right now", not just "this is configured as
+                    // primary" (which could be true while the PC is off).
+                    var isPcReachable by remember(primaryPc.host, primaryPc.port) { mutableStateOf<Boolean?>(null) }
+                    LaunchedEffect(primaryPc.host, primaryPc.port) {
+                        while (true) {
+                            isPcReachable = withContext(Dispatchers.IO) {
+                                try {
+                                    java.net.Socket().use { it.connect(java.net.InetSocketAddress(primaryPc.host, primaryPc.port), 800); true }
+                                } catch (e: Exception) {
+                                    false
+                                }
+                            }
+                            kotlinx.coroutines.delay(5000)
+                        }
+                    }
+                    val pcColor = if (isPcReachable == true) {
+                        androidx.compose.material3.MaterialTheme.colorScheme.primary
+                    } else {
+                        androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    com.tvfilebridge.app.ui.screens.StatusPill(
+                        label = "PC: ${primaryPc.name}",
+                        color = pcColor,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Computer,
+                            contentDescription = null,
+                            modifier = Modifier.size(10.dp),
+                            tint = pcColor,
+                        )
+                    }
+                }
                 val isOffline by container.connectionManager.offlineMode.collectAsState(initial = false)
                 androidx.compose.foundation.layout.Row(
                     modifier = Modifier

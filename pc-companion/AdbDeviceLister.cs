@@ -21,6 +21,12 @@ public class AdbDevice : INotifyPropertyChanged
 
     public string DisplayName => string.IsNullOrWhiteSpace(CustomName) ? Model : CustomName;
 
+    // ComboBox's built-in "selected item" display (SelectionBoxItem) falls
+    // back to plain ToString() when no ItemTemplate is set - without this,
+    // the Install APK phone picker's closed control showed the raw
+    // "PcCompanion.AdbDevice" type name instead of the phone's model/name.
+    public override string ToString() => DisplayName;
+
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

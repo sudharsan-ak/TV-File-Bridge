@@ -28,6 +28,21 @@ public class BoolToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>Visible when the bound int count is &gt; 0 (or == 0 with ConverterParameter="Invert") - used for the Install APK phone picker's "has results" vs "empty" panels.</summary>
+public class CountToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var count = value is int i ? i : 0;
+        var hasItems = count > 0;
+        if (string.Equals(parameter as string, "Invert", StringComparison.OrdinalIgnoreCase)) hasItems = !hasItems;
+        return hasItems ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>
 /// Fill for the per-card multi-select checkbox circle - solid teal once
 /// selected, transparent otherwise. Previously this was a fixed XAML brush

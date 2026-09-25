@@ -86,7 +86,7 @@ fun SettingsScreen(
         }
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
-                0 -> GeneralTab()
+                0 -> GeneralTab(container = container)
                 1 -> DevicesTab(viewModel = viewModel)
                 else -> SchedulerTab(viewModel = viewModel)
             }
@@ -95,14 +95,66 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun GeneralTab(modifier: Modifier = Modifier) {
+private fun GeneralTab(container: AppContainer, modifier: Modifier = Modifier) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item { WhatsMyIpCard(container) }
         item { BatteryOptimizationCard() }
         item { QuickSettingsTileCard() }
+    }
+}
+
+/**
+ * This phone's own LAN IP (and the port it listens on for PC->phone
+ * clipboard pushes, see ClipboardReceiverServer) - useful when setting up a
+ * new PC's "Add device" by hand, or just checking connectivity, without
+ * digging through Android's own Wi-Fi settings. Read fresh each time the
+ * card recomposes (e.g. reopening Settings) rather than cached, since a
+ * phone's IP can change between Wi-Fi networks or DHCP renewals.
+ */
+@Composable
+private fun WhatsMyIpCard(container: AppContainer, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ip = remember {
+        @Suppress("DEPRECATION")
+        val wifiManager = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+        val ipInt = wifiManager?.connectionInfo?.ipAddress ?: 0
+        if (ipInt == 0) null else {
+            val bytes = intArrayOf(ipInt and 0xFF, ipInt shr 8 and 0xFF, ipInt shr 16 and 0xFF, ipInt shr 24 and 0xFF)
+            "${bytes[0]}.${bytes[1]}.${bytes[2]}.${bytes[3]}"
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("This phone's IP address", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            if (ip != null) {
+                Text(
+                    "$ip : ${com.tvfilebridge.app.clipboard.CLIPBOARD_RECEIVER_PORT}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Use this when adding this phone from PC Companion or another device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    "Not connected to Wi-Fi.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 

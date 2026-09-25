@@ -15,6 +15,7 @@
         <local:BoolToVisibilityConverter x:Key="BoolVisibility"/>
         <local:BoolToSelectedCircleBackgroundConverter x:Key="SelectedCircleBackground"/>
         <local:InverseBoolToVisibilityConverter x:Key="InverseBoolVisibility"/>
+        <local:CountToVisibilityConverter x:Key="CountToVisibility"/>
         <local:PrimaryButtonLabelConverter x:Key="PrimaryButtonLabel"/>
         <local:TransferStatusToVisibilityConverter x:Key="TransferInProgressVisibility" ShowFor="InProgress"/>
         <local:TransferStatusToVisibilityConverter x:Key="TransferFailedVisibility" ShowFor="Failed"/>
@@ -65,6 +66,89 @@
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Themed ComboBox - default WPF chrome is a plain white Windows
+             control, badly out of place against this app's dark palette
+             (used by Install APK's phone picker). Built the same way as the
+             ContextMenu/MenuItem styles above: a CardBrush field with the
+             SurfaceBrush dropdown list and CardBrush item-hover highlight. -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border Name="Border" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{StaticResource CardBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{StaticResource TealBrush}"/>
+                                <Setter Property="Foreground" Value="#0B1615"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Name="ToggleButton"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                          Focusable="False" ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{StaticResource CardBrush}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Grid.Column="0" Content="{TemplateBinding Content}"
+                                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                                   VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="⌄" Foreground="{StaticResource MutedTextBrush}" Margin="8,0,0,0"/>
+                                            </Grid>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                                <ToggleButton.Content>
+                                    <ContentPresenter Content="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=SelectionBoxItem}"
+                                                       ContentTemplate="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=SelectionBoxItemTemplate}"/>
+                                </ToggleButton.Content>
+                            </ToggleButton>
+                            <Popup Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" Focusable="False" PopupAnimation="None">
+                                <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource HairlineBrush}"
+                                        BorderThickness="1" CornerRadius="10" Padding="4"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer MaxHeight="220">
+                                        <StackPanel IsItemsHost="True"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}"/>
                 </Setter.Value>
             </Setter>
         </Style>
@@ -481,7 +565,14 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                <TextBlock DockPanel.Dock="Top" Text="Connected TVs" FontWeight="Bold" FontSize="14" Margin="0,20,0,12"/>
+                <Grid DockPanel.Dock="Top" Margin="0,20,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Connected TVs" FontWeight="Bold" FontSize="14" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="+ Add TV" Style="{StaticResource FlatButton}" Click="OnAddTvClick"/>
+                </Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding SavedTvs}">
                         <ItemsControl.ItemTemplate>
@@ -505,6 +596,12 @@
                                             <Button Content="Disconnect" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
                                                     Click="OnTvSectionDisconnectClick" Tag="{Binding}"
                                                     Visibility="{Binding IsConnected, Converter={StaticResource BoolVisibility}}"/>
+                                            <!-- The TV's IP can change (DHCP reassignment) without this app
+                                                 ever hearing about it - Reconnect lets the stored IP be edited
+                                                 and re-verified in place, instead of Forget + re-add from scratch. -->
+                                            <Button Content="Reconnect" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
+                                                    Click="OnTvSectionReconnectClick" Tag="{Binding}"
+                                                    Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolVisibility}}"/>
                                             <Button Content="Rename" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
                                                     Click="OnTvSectionRenameClick" Tag="{Binding}"/>
                                             <Button Content="Forget" Style="{StaticResource FlatButton}"
@@ -952,6 +1049,19 @@
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavSettings, Converter={StaticResource BoolVisibility}}">
             <StackPanel>
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="This PC's IP address" FontWeight="Bold"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource TealBrush}" Margin="0,6,0,4">
+                            <Run Text="{Binding MyIpAddress, Mode=OneWay}"/>
+                            <Run Text=" : "/>
+                            <Run Text="{Binding Text, ElementName=PortBox, Mode=OneWay}"/>
+                        </TextBlock>
+                        <TextBlock Text="Use this when adding this PC from the phone app's PC Sync screen."
+                                   Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
                 <TextBlock Text="DEVICE NAME" FontSize="11" FontWeight="Bold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6"/>
                 <TextBox x:Name="DeviceNameBox" Margin="0,0,0,18"/>
 
@@ -994,14 +1104,87 @@
 
         <StackPanel Margin="0,16,0,0" Visibility="{Binding IsChecked, ElementName=NavInstallApk, Converter={StaticResource BoolVisibility}}">
             <TextBlock Text="Install APK" FontWeight="Bold" FontSize="14" Margin="0,0,0,4"/>
-            <TextBlock Text="Sideload an APK straight onto the connected TV, same as running adb install - no need to copy the file onto the TV first."
+            <TextBlock Text="Sideload an APK straight onto a connected TV or phone, same as running adb install - no need to copy the file over first."
                        Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,16"/>
 
+            <!-- Target picker - always shown (not gated on either being
+                 connected) so switching to Phone doesn't need a TV at all,
+                 and switching to TV doesn't need a phone plugged in. Only
+                 the drop zone below is gated on the *picked* target
+                 actually being reachable. -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <Button Content="📺 TV" Click="OnApkTargetTvClick" Margin="0,0,8,0">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource FlatButton}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsApkTargetTv}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource TealBrush}"/>
+                                    <Setter Property="Foreground" Value="#0B1615"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="📱 Phone" Click="OnApkTargetPhoneClick">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource FlatButton}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsApkTargetPhone}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource TealBrush}"/>
+                                    <Setter Property="Foreground" Value="#0B1615"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding IsApkTargetPhone, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12">
+                <TextBlock Text="Phone" FontSize="11" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,4"
+                           Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ComboBox ItemsSource="{Binding ApkTargetPhones}" SelectedItem="{Binding SelectedApkTargetPhone}"
+                          DisplayMemberPath="DisplayName" HorizontalAlignment="Left" MinWidth="220"
+                          Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}}"/>
+                <TextBlock Text="No phone found. Connect one over USB, or pair it for wireless debugging, then it'll show up here."
+                           Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap"
+                           Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}, ConverterParameter=Invert}"/>
+            </StackPanel>
+
             <StackPanel Visibility="{Binding IsTvConnectedForInstall, Converter={StaticResource InverseBoolVisibility}}">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsApkTargetTv}" Value="True"/>
+                                    <Condition Binding="{Binding IsTvConnectedForInstall}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
                 <TextBlock Text="Connect to a TV first (Devices or TV Files tab), then come back here." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
             </StackPanel>
 
-            <StackPanel Visibility="{Binding IsTvConnectedForInstall, Converter={StaticResource BoolVisibility}}">
+            <StackPanel>
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsApkTargetTv}" Value="True"/>
+                                    <Condition Binding="{Binding IsTvConnectedForInstall}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
 
                 <!-- Stage 1: drop zone / picker - shown when the queue is empty. -->
                 <Border x:Name="ApkDropZone" Style="{StaticResource ApkDropZoneIdle}"

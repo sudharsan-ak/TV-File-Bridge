@@ -54,6 +54,25 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
 
     public bool IsTvConnectedForInstall => App.TvAdbClient.IsConnected;
 
+    /// <summary>This PC's own LAN IP - same "first up, non-loopback IPv4 adapter" logic as TvDiscovery's subnet sweep, just returning the full address instead of a /24 prefix. Shown on Settings so the phone's "Add PC" can be filled in by hand if auto-discovery doesn't find it.</summary>
+    public string MyIpAddress
+    {
+        get
+        {
+            foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                if (nic.NetworkInterfaceType is System.Net.NetworkInformation.NetworkInterfaceType.Loopback or System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) continue;
+                foreach (var addr in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (addr.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                    return addr.Address.ToString();
+                }
+            }
+            return "Not connected to a network";
+        }
+    }
+
     private string? _remoteActionError;
     public string? RemoteActionError
     {
@@ -110,7 +129,55 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
 
     public BulkObservableCollection<ApkQueueItem> ApkQueue { get; } = new();
     public string ApkInstallButtonLabel => ApkQueue.Count == 1 ? "Install" : $"Install all {ApkQueue.Count}";
-    public string ApkInstallTargetLabel => $"📺 Installing to {App.TvAdbClient.ConnectedHost}";
+
+    public enum ApkInstallTarget { Tv, Phone }
+
+    private ApkInstallTarget _apkTarget = ApkInstallTarget.Tv;
+    public ApkInstallTarget ApkTarget
+    {
+        get => _apkTarget;
+        set
+        {
+            _apkTarget = value;
+            OnPropertyChanged(nameof(ApkTarget));
+            OnPropertyChanged(nameof(IsApkTargetTv));
+            OnPropertyChanged(nameof(IsApkTargetPhone));
+            OnPropertyChanged(nameof(ApkInstallTargetLabel));
+            if (value == ApkInstallTarget.Phone) _ = RefreshApkTargetPhonesAsync();
+        }
+    }
+    public bool IsApkTargetTv => ApkTarget == ApkInstallTarget.Tv;
+    public bool IsApkTargetPhone => ApkTarget == ApkInstallTarget.Phone;
+
+    public ObservableCollection<AdbDevice> ApkTargetPhones { get; } = new();
+
+    private AdbDevice? _selectedApkTargetPhone;
+    public AdbDevice? SelectedApkTargetPhone
+    {
+        get => _selectedApkTargetPhone;
+        set { _selectedApkTargetPhone = value; OnPropertyChanged(nameof(SelectedApkTargetPhone)); OnPropertyChanged(nameof(ApkInstallTargetLabel)); }
+    }
+
+    /// <summary>
+    /// `adb devices -l` doesn't distinguish phones from TVs - a connected TV
+    /// shows up exactly like a phone would. This app already knows which
+    /// serials are TVs though: a TV's ADB serial is always "host:port", and
+    /// every TV this app has ever connected to is recorded in SavedTvs with
+    /// that same host/port, so anything matching one of those is filtered
+    /// out before it can appear in the phone picker.
+    /// </summary>
+    private async Task RefreshApkTargetPhonesAsync()
+    {
+        ApkTargetPhones.Clear();
+        var tvSerials = App.SettingsStore.Settings.SavedTvs.Select(tv => $"{tv.Host}:{tv.Port}").ToHashSet();
+        var devices = await AdbDeviceLister.ListAsync();
+        foreach (var device in devices.Where(d => !tvSerials.Contains(d.Serial))) ApkTargetPhones.Add(device);
+        SelectedApkTargetPhone = ApkTargetPhones.FirstOrDefault();
+    }
+
+    public string ApkInstallTargetLabel => ApkTarget == ApkInstallTarget.Tv
+        ? $"📺 Installing to {App.TvAdbClient.ConnectedHost}"
+        : SelectedApkTargetPhone != null ? $"📱 Installing to {SelectedApkTargetPhone.DisplayName}" : "📱 No phone found";
 
     private int _apkInstalledCount;
     public int ApkInstalledCount
@@ -297,6 +364,46 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         if (stored == null) return;
         stored.Name = dialog.NewName;
         App.SettingsStore.Save();
+        RefreshSavedTvs();
+    }
+
+    /// <summary>
+    /// Handles a TV whose IP changed since it was saved - the dialog itself
+    /// connects (so a bad IP shows its error without leaving this handler),
+    /// then the stored entry's Host is updated in place and this becomes the
+    /// active TV, same as a normal successful connect.
+    /// </summary>
+    private void OnTvSectionReconnectClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not SavedTv tv) return;
+
+        var dialog = new ReconnectTvWindow(App.TvAdbClient, tv.Host, tv.Port);
+        if (dialog.ShowDialog() != true) return;
+
+        var stored = App.SettingsStore.Settings.SavedTvs.FirstOrDefault(t => t.Host == tv.Host && t.Port == tv.Port);
+        if (stored != null)
+        {
+            stored.Host = dialog.NewHost;
+            App.SettingsStore.Save();
+        }
+
+        RefreshSavedTvs();
+    }
+
+    private void OnApkTargetTvClick(object sender, RoutedEventArgs e) => ApkTarget = ApkInstallTarget.Tv;
+    private void OnApkTargetPhoneClick(object sender, RoutedEventArgs e) => ApkTarget = ApkInstallTarget.Phone;
+
+    /// <summary>Scans the LAN for TVs with ADB open (mirrors the phone app's own "Add TV" flow) and, on success, saves + connects the picked one - covers both a genuinely new TV and a saved one whose IP quietly changed (DHCP reassignment), without having to Forget + re-add by hand.</summary>
+    private void OnAddTvClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new AddTvWindow(App.TvAdbClient);
+        if (dialog.ShowDialog() != true) return;
+
+        var settings = App.SettingsStore.Settings;
+        settings.SavedTvs.RemoveAll(t => t.Host == dialog.TvHost && t.Port == dialog.TvPort);
+        settings.SavedTvs.Add(new SavedTv { Name = dialog.TvName, Host = dialog.TvHost, Port = dialog.TvPort });
+        App.SettingsStore.Save();
+
         RefreshSavedTvs();
     }
 
@@ -596,9 +703,21 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     /// ever talks to one device serially anyway, so there's no throughput
     /// lost by not parallelizing) - a failure on one item doesn't stop the
     /// rest of the queue, it's just marked Failed and the loop continues.
+    /// Branches on ApkTarget: TV goes through TvAdbClient's own ADB
+    /// connection (AdvancedSharpAdbClient, with real per-chunk upload
+    /// progress); Phone shells out to the raw adb binary against the picked
+    /// device's serial (PhoneAdbInstaller) since TvAdbClient's one
+    /// connection is already the TV's - only coarse "Installing…" progress
+    /// there, adb install's own stdout doesn't expose a percentage.
     /// </summary>
     private async void OnApkQueueInstallClick(object sender, RoutedEventArgs e)
     {
+        if (ApkTarget == ApkInstallTarget.Phone && SelectedApkTargetPhone == null)
+        {
+            AppDialog.ShowInfo("No phone found. Connect a phone over USB or paired wireless debugging first.", "Install APK");
+            return;
+        }
+
         ApkStage = ApkPageStage.Installing;
         ApkInstalledCount = 0;
         ApkFailedCount = 0;
@@ -609,21 +728,30 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
             item.Progress = 0;
             item.StatusText = "Uploading…";
 
-            var result = await App.TvAdbClient.InstallApkAsync(item.LocalPath, args =>
+            Result<Unit> result;
+            if (ApkTarget == ApkInstallTarget.Tv)
             {
-                Dispatcher.Invoke(() =>
+                result = await App.TvAdbClient.InstallApkAsync(item.LocalPath, args =>
                 {
-                    item.Progress = args.UploadProgress;
-                    item.StatusText = args.State switch
+                    Dispatcher.Invoke(() =>
                     {
-                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.Preparing => "Preparing…",
-                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.Uploading => $"Uploading… {args.UploadProgress:0}%",
-                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.Installing => "Installing on TV…",
-                        AdvancedSharpAdbClient.Models.PackageInstallProgressState.PostInstall => "Finishing up…",
-                        _ => item.StatusText,
-                    };
+                        item.Progress = args.UploadProgress;
+                        item.StatusText = args.State switch
+                        {
+                            AdvancedSharpAdbClient.Models.PackageInstallProgressState.Preparing => "Preparing…",
+                            AdvancedSharpAdbClient.Models.PackageInstallProgressState.Uploading => $"Uploading… {args.UploadProgress:0}%",
+                            AdvancedSharpAdbClient.Models.PackageInstallProgressState.Installing => "Installing on TV…",
+                            AdvancedSharpAdbClient.Models.PackageInstallProgressState.PostInstall => "Finishing up…",
+                            _ => item.StatusText,
+                        };
+                    });
                 });
-            });
+            }
+            else
+            {
+                item.StatusText = "Installing on phone…";
+                result = await PhoneAdbInstaller.InstallAsync(SelectedApkTargetPhone!.Serial, item.LocalPath);
+            }
 
             if (result.IsSuccess)
             {
