@@ -1054,7 +1054,7 @@
                         <TextBlock Text="This PC's IP address" FontWeight="Bold"/>
                         <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource TealBrush}" Margin="0,6,0,4">
                             <Run Text="{Binding MyIpAddress, Mode=OneWay}"/>
-                            <Run Text=" : "/>
+                            <Run Text=":"/>
                             <Run Text="{Binding Text, ElementName=PortBox, Mode=OneWay}"/>
                         </TextBlock>
                         <TextBlock Text="Use this when adding this PC from the phone app's PC Sync screen."

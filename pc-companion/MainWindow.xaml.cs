@@ -54,7 +54,17 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
 
     public bool IsTvConnectedForInstall => App.TvAdbClient.IsConnected;
 
-    /// <summary>This PC's own LAN IP - same "first up, non-loopback IPv4 adapter" logic as TvDiscovery's subnet sweep, just returning the full address instead of a /24 prefix. Shown on Settings so the phone's "Add PC" can be filled in by hand if auto-discovery doesn't find it.</summary>
+    /// <summary>
+    /// This PC's own real LAN IP. A plain "first up, non-loopback IPv4
+    /// adapter" scan (the original approach here) picks up whatever
+    /// NetworkInterface.GetAllNetworkInterfaces() happens to list first -
+    /// on a dev machine that's very often a WSL/Hyper-V/VPN virtual
+    /// adapter (e.g. 172.x from a Hyper-V default switch), not the real
+    /// Wi-Fi/Ethernet adapter other devices on the LAN can actually reach.
+    /// Requiring a real default gateway filters those out: a virtual
+    /// switch adapter has no gateway of its own, while an actual LAN
+    /// connection always does.
+    /// </summary>
     public string MyIpAddress
     {
         get
@@ -63,7 +73,13 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
             {
                 if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
                 if (nic.NetworkInterfaceType is System.Net.NetworkInformation.NetworkInterfaceType.Loopback or System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) continue;
-                foreach (var addr in nic.GetIPProperties().UnicastAddresses)
+
+                var ipProps = nic.GetIPProperties();
+                var hasGateway = ipProps.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                    && !g.Address.Equals(System.Net.IPAddress.Any));
+                if (!hasGateway) continue;
+
+                foreach (var addr in ipProps.UnicastAddresses)
                 {
                     if (addr.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
                     return addr.Address.ToString();

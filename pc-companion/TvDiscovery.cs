@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
@@ -49,7 +50,15 @@ public static class TvDiscovery
         }
     }
 
-    /// <summary>First 3 octets of this PC's own LAN-facing IPv4 address (Wi-Fi or Ethernet, whichever is actually up), or null if none found.</summary>
+    /// <summary>
+    /// First 3 octets of this PC's own real LAN-facing IPv4 address (Wi-Fi
+    /// or Ethernet, whichever is actually up), or null if none found.
+    /// Requires the adapter to actually have a default gateway - without
+    /// this, a dev machine's WSL/Hyper-V/VPN virtual adapter (no gateway of
+    /// its own) can come first in GetAllNetworkInterfaces() and this would
+    /// sweep an unreachable virtual subnet instead of the real LAN, finding
+    /// nothing.
+    /// </summary>
     private static string? LocalSubnetPrefix()
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
@@ -57,7 +66,12 @@ public static class TvDiscovery
             if (nic.OperationalStatus != OperationalStatus.Up) continue;
             if (nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
 
-            foreach (var addr in nic.GetIPProperties().UnicastAddresses)
+            var ipProps = nic.GetIPProperties();
+            var hasGateway = ipProps.GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork
+                && !g.Address.Equals(System.Net.IPAddress.Any));
+            if (!hasGateway) continue;
+
+            foreach (var addr in ipProps.UnicastAddresses)
             {
                 if (addr.Address.AddressFamily != AddressFamily.InterNetwork) continue;
                 var bytes = addr.Address.GetAddressBytes();
