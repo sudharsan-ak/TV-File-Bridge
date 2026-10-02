@@ -19,8 +19,11 @@ public static class StartupRegistration
 
         if (enabled)
         {
+            // --minimized tells App.OnStartup this launch came from Windows
+            // sign-in, not the user double-clicking the app - so it skips
+            // OpenMainWindow() and starts quiet in the tray instead.
             var exePath = Environment.ProcessPath;
-            if (exePath != null) key.SetValue(ValueName, $"\"{exePath}\"");
+            if (exePath != null) key.SetValue(ValueName, $"\"{exePath}\" --minimized");
         }
         else
         {

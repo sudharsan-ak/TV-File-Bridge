@@ -64,7 +64,14 @@ public partial class App : Application
         _trayIcon = new TrayIconManager(this);
         _trayIcon.Show();
 
-        OpenMainWindow();
+        // --minimized is only ever passed by StartupRegistration's Run key
+        // entry - a manual launch (Start Menu, desktop shortcut) never has
+        // it, so this only changes behavior for the auto-start-at-sign-in
+        // case. The tray icon above still shows either way.
+        if (!e.Args.Contains("--minimized"))
+        {
+            OpenMainWindow();
+        }
     }
 
     private void WatchForShowWindowSignal()
