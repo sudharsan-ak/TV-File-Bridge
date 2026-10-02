@@ -123,6 +123,19 @@ public class ClipboardServer
                     return;
                 }
 
+                // Answered before pairing - this is how the phone re-finds a
+                // PC whose IP changed (scan the LAN for port 58821, ask each
+                // hit "whoami", match on DeviceName, update the saved IP).
+                // It reveals nothing sensitive (just this PC's configured
+                // name) and must not trigger the pairing-approval popup,
+                // since a background rediscovery scan shouldn't interrupt
+                // the user the way a real first-time pairing request does.
+                if (header.Type == "whoami")
+                {
+                    await WriteResponseAsync(stream, _settingsStore.Settings.DeviceName, token);
+                    return;
+                }
+
                 var isPaired = _settingsStore.Settings.PairedDevices.Any(d => d.IpAddress == remoteIp);
                 Console.WriteLine($"[ClipboardServer] remoteIp={remoteIp} isPaired={isPaired} headerDeviceName='{header.DeviceName}'");
                 if (!isPaired)

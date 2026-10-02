@@ -60,10 +60,13 @@ import com.tvfilebridge.app.clipboard.ClipboardContentKind
 import com.tvfilebridge.app.clipboard.ClipboardEntryDirection
 import com.tvfilebridge.app.clipboard.ClipboardSendEntry
 import com.tvfilebridge.app.clipboard.ClipboardSendStatus
+import com.tvfilebridge.app.clipboard.PcConnectionResolver
 import com.tvfilebridge.app.clipboard.PcDevice
 import com.tvfilebridge.app.clipboard.PushResult
 import com.tvfilebridge.app.ui.nav.AppHeader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -544,7 +547,15 @@ private fun AddPcDeviceDialog(
                     val finalName = name.trim().ifBlank { host.trim() }
                     if (host.isNotBlank()) {
                         scope.launch {
-                            container.pcDeviceStore.addDevice(finalName, host.trim(), portInt)
+                            // Captured once, now, while the entered IP is
+                            // known-good - this is what PcConnectionResolver
+                            // matches against later, deliberately independent
+                            // of finalName (which the user can freely rename
+                            // afterward without breaking rediscovery).
+                            val identityName = withContext(Dispatchers.IO) {
+                                PcConnectionResolver.whoami(host.trim(), portInt)
+                            }
+                            container.pcDeviceStore.addDevice(finalName, host.trim(), portInt, identityName)
                             onDismiss()
                         }
                     }

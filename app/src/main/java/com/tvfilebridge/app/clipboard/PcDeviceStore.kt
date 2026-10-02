@@ -29,8 +29,8 @@ class PcDeviceStore(private val context: Context) {
         runCatching { json.decodeFromString<List<PcDevice>>(raw) }.getOrDefault(emptyList())
     }
 
-    suspend fun addDevice(name: String, host: String, port: Int): PcDevice {
-        val newDevice = PcDevice(id = UUID.randomUUID().toString(), name = name, host = host, port = port)
+    suspend fun addDevice(name: String, host: String, port: Int, identityName: String? = null): PcDevice {
+        val newDevice = PcDevice(id = UUID.randomUUID().toString(), name = name, host = host, port = port, identityName = identityName)
         saveDevices(devices.first() + newDevice)
         return newDevice
     }
@@ -41,6 +41,11 @@ class PcDeviceStore(private val context: Context) {
 
     suspend fun renameDevice(id: String, newName: String) {
         saveDevices(devices.first().map { if (it.id == id) it.copy(name = newName) else it })
+    }
+
+    /** Called when ClipboardBridge's rediscovery finds this PC at a new IP (DHCP reassignment) - self-heals a stale saved host without the user having to Forget + re-add it. */
+    suspend fun updateHost(id: String, newHost: String) {
+        saveDevices(devices.first().map { if (it.id == id) it.copy(host = newHost) else it })
     }
 
     /** Only one device can be primary at a time - setting one clears the flag on all others. */

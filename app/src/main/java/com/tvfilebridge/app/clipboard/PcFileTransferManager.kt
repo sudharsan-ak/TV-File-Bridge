@@ -57,7 +57,12 @@ private data class FilePushHeader(
  * can take effect between any two chunks rather than only before/after the
  * entire transfer.
  */
-class PcFileTransferManager(private val context: Context, private val clipboardSendLog: ClipboardSendLog) {
+class PcFileTransferManager(
+    private val context: Context,
+    private val clipboardSendLog: ClipboardSendLog,
+    private val pcDiscovery: com.tvfilebridge.app.discovery.PcDiscovery,
+    private val pcDeviceStore: com.tvfilebridge.app.clipboard.PcDeviceStore,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     // encodeDefaults = true - without it, kotlinx.serialization omits any
@@ -114,7 +119,8 @@ class PcFileTransferManager(private val context: Context, private val clipboardS
             }
 
             input.use { stream ->
-                Socket(device.host, device.port).use { socket ->
+                val resolved = PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+                connectSocket(resolved.host, resolved.port).use { socket ->
                     socket.soTimeout = 120_000
                     val output = socket.getOutputStream()
 

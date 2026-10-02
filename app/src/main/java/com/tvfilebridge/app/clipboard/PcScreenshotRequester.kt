@@ -37,6 +37,8 @@ private data class ScreenshotRequestHeader(
 class PcScreenshotRequester(
     private val context: Context,
     receivedFilesFolderStore: ReceivedFilesFolderStore,
+    private val pcDiscovery: com.tvfilebridge.app.discovery.PcDiscovery,
+    private val pcDeviceStore: PcDeviceStore,
 ) {
     private val saveHelper = ScreenshotSaveHelper(context, receivedFilesFolderStore)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -44,7 +46,8 @@ class PcScreenshotRequester(
     suspend fun requestAndSave(device: PcDevice): Result<Uri> = withContext(Dispatchers.IO) {
         try {
             val tempFile = File(context.cacheDir, "pc_screenshot_${System.currentTimeMillis()}.png")
-            Socket(device.host, device.port).use { socket ->
+            val resolved = PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = 15_000
                 val output = socket.getOutputStream()
                 val input = socket.getInputStream()

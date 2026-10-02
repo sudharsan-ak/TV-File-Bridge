@@ -36,13 +36,21 @@ sealed class PushResult {
  * unlike CursorBridge's persistent socket, this only needs a short-lived
  * connection per share action, not a continuous high-frequency stream.
  */
-class ClipboardBridge(private val context: Context) {
+class ClipboardBridge(
+    private val context: Context,
+    private val pcDiscovery: com.tvfilebridge.app.discovery.PcDiscovery,
+    private val pcDeviceStore: PcDeviceStore,
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    private suspend fun resolveDevice(device: PcDevice): PcDevice =
+        PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+
     suspend fun pushText(device: PcDevice, text: String): PushResult = withContext(Dispatchers.IO) {
+        val resolved = resolveDevice(device)
         runCatching {
-            Socket(device.host, device.port).use { socket ->
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 // Long enough to cover a first-time pairing approval, which
                 // waits on the user actually noticing and clicking the PC's
                 // Allow/Deny popup - a short timeout here previously reset
@@ -68,8 +76,9 @@ class ClipboardBridge(private val context: Context) {
      * afterward, so no PC-side change was needed for this to already work.
      */
     suspend fun ping(device: PcDevice, timeoutMs: Int = 5000): PushResult = withContext(Dispatchers.IO) {
+        val resolved = resolveDevice(device)
         runCatching {
-            Socket(device.host, device.port).use { socket ->
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = timeoutMs
                 val output = DataOutputStream(socket.getOutputStream())
                 val header = PushHeader(type = "ping", deviceName = Build.MODEL ?: "Android phone")
@@ -83,11 +92,12 @@ class ClipboardBridge(private val context: Context) {
     }
 
     suspend fun pushImage(device: PcDevice, uri: Uri): PushResult = withContext(Dispatchers.IO) {
+        val resolved = resolveDevice(device)
         runCatching {
             val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: return@runCatching PushResult.Failed("Could not read image")
 
-            Socket(device.host, device.port).use { socket ->
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = PUSH_TIMEOUT_MS
                 val output = DataOutputStream(socket.getOutputStream())
                 val header = PushHeader(

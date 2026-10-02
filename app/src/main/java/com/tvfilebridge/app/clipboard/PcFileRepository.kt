@@ -47,13 +47,17 @@ private data class PcRequestHeader(
  * literal absolute Windows path the PC uses directly - no relative-to-root
  * scheme, same full-access model the TV Files feature already has via ADB.
  */
-class PcFileRepository {
+class PcFileRepository(
+    private val pcDiscovery: com.tvfilebridge.app.discovery.PcDiscovery,
+    private val pcDeviceStore: PcDeviceStore,
+) {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     suspend fun list(device: PcDevice, path: String): Result<List<PcFile>> = withContext(Dispatchers.IO) {
         runCatching {
-            Socket(device.host, device.port).use { socket ->
+            val resolved = PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = 15_000
                 val input = socket.getInputStream()
                 val output = socket.getOutputStream()
@@ -72,7 +76,8 @@ class PcFileRepository {
 
     suspend fun pullToCache(device: PcDevice, remotePath: String, localFile: File): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            Socket(device.host, device.port).use { socket ->
+            val resolved = PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = 120_000
                 val input = socket.getInputStream()
                 val output = socket.getOutputStream()
@@ -89,7 +94,8 @@ class PcFileRepository {
 
     suspend fun push(device: PcDevice, localFile: File, remoteDirPath: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            Socket(device.host, device.port).use { socket ->
+            val resolved = PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = 120_000
                 val output = socket.getOutputStream()
                 val header = PcRequestHeader(
@@ -118,7 +124,8 @@ class PcFileRepository {
 
     suspend fun rename(device: PcDevice, path: String, newName: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            Socket(device.host, device.port).use { socket ->
+            val resolved = PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = 15_000
                 val output = socket.getOutputStream()
                 writeHeader(output, PcRequestHeader(type = "pc_rename", deviceName = deviceName(), path = path, newName = newName))
@@ -130,7 +137,8 @@ class PcFileRepository {
 
     suspend fun delete(device: PcDevice, path: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            Socket(device.host, device.port).use { socket ->
+            val resolved = PcConnectionResolver.resolve(device, pcDiscovery, pcDeviceStore)
+            connectSocket(resolved.host, resolved.port).use { socket ->
                 socket.soTimeout = 15_000
                 val output = socket.getOutputStream()
                 writeHeader(output, PcRequestHeader(type = "pc_delete", deviceName = deviceName(), path = path))

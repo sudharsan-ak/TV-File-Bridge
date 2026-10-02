@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
+import com.tvfilebridge.app.clipboard.PcConnectionResolver
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -117,22 +118,19 @@ fun AppScaffold(container: AppContainer) {
                 val pcDevices by container.pcDeviceStore.devices.collectAsState(initial = emptyList())
                 val primaryPc = pcDevices.find { it.isPrimary }
                 if (primaryPc != null) {
-                    // Same "is something actually listening" TCP probe as
-                    // PcDiscovery's scan, just against this one known
-                    // host:port instead of sweeping the subnet - re-checked
-                    // every few seconds so the pill's teal color means
-                    // "reachable right now", not just "this is configured as
-                    // primary" (which could be true while the PC is off).
-                    var isPcReachable by remember(primaryPc.host, primaryPc.port) { mutableStateOf<Boolean?>(null) }
-                    LaunchedEffect(primaryPc.host, primaryPc.port) {
+                    // Goes through PcConnectionResolver, not a raw probe
+                    // against the saved host - this periodic check (every
+                    // few seconds while the drawer's open) doubles as the
+                    // background self-heal for a stale IP: resolve() tries
+                    // the saved host first, and on failure silently rescans
+                    // and fixes PcDeviceStore before this ever reports
+                    // "unreachable", so the pill turning teal again IS the
+                    // IP having been corrected, not just a lucky retry.
+                    var isPcReachable by remember(primaryPc.id) { mutableStateOf<Boolean?>(null) }
+                    LaunchedEffect(primaryPc.id) {
                         while (true) {
-                            isPcReachable = withContext(Dispatchers.IO) {
-                                try {
-                                    java.net.Socket().use { it.connect(java.net.InetSocketAddress(primaryPc.host, primaryPc.port), 800); true }
-                                } catch (e: Exception) {
-                                    false
-                                }
-                            }
+                            val resolved = PcConnectionResolver.resolve(primaryPc, container.pcDiscovery, container.pcDeviceStore)
+                            isPcReachable = PcConnectionResolver.whoami(resolved.host, resolved.port) != null
                             kotlinx.coroutines.delay(5000)
                         }
                     }
