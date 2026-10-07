@@ -1544,6 +1544,9 @@ private fun AppsSection(viewModel: RemoteViewModel) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.End,
                 ) {
+                    IconButton(onClick = { viewModel.loadApps() }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh apps")
+                    }
                     IconButton(onClick = { isListView = !isListView }) {
                         Icon(
                             if (isListView) Icons.Filled.GridView else Icons.AutoMirrored.Filled.ViewList,

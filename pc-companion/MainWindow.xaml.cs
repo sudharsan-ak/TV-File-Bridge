@@ -182,11 +182,20 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     /// that same host/port, so anything matching one of those is filtered
     /// out before it can appear in the phone picker.
     /// </summary>
+    private int _apkTargetPhonesRefreshToken;
+
     private async Task RefreshApkTargetPhonesAsync()
     {
-        ApkTargetPhones.Clear();
+        // Each call gets its own token - if a newer refresh starts before an
+        // older one's `await` returns (e.g. the user clicking Phone twice in
+        // quick succession), the stale call's results are discarded instead
+        // of both writing into ApkTargetPhones and producing duplicate rows.
+        var token = ++_apkTargetPhonesRefreshToken;
         var tvSerials = App.SettingsStore.Settings.SavedTvs.Select(tv => $"{tv.Host}:{tv.Port}").ToHashSet();
         var devices = await AdbDeviceLister.ListAsync();
+        if (token != _apkTargetPhonesRefreshToken) return;
+
+        ApkTargetPhones.Clear();
         foreach (var device in devices.Where(d => !tvSerials.Contains(d.Serial))) ApkTargetPhones.Add(device);
         SelectedApkTargetPhone = ApkTargetPhones.FirstOrDefault();
     }

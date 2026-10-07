@@ -102,7 +102,7 @@
             <Setter Property="Background" Value="{StaticResource CardBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Padding" Value="14,10"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -121,8 +121,10 @@
                                                 </Grid.ColumnDefinitions>
                                                 <ContentPresenter Grid.Column="0" Content="{TemplateBinding Content}"
                                                                    ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                                   VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="1" Text="⌄" Foreground="{StaticResource MutedTextBrush}" Margin="8,0,0,0"/>
+                                                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                <TextBlock Grid.Column="1" Text="&#xE70D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                           FontSize="11" Foreground="{StaticResource MutedTextBrush}"
+                                                           VerticalAlignment="Center" HorizontalAlignment="Right"/>
                                             </Grid>
                                         </Border>
                                     </ControlTemplate>
@@ -1145,7 +1147,7 @@
                 <TextBlock Text="Phone" FontSize="11" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,4"
                            Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}}"/>
                 <ComboBox ItemsSource="{Binding ApkTargetPhones}" SelectedItem="{Binding SelectedApkTargetPhone}"
-                          DisplayMemberPath="DisplayName" HorizontalAlignment="Left" MinWidth="220"
+                          DisplayMemberPath="DisplayName" HorizontalAlignment="Left" MinWidth="260"
                           Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}}"/>
                 <TextBlock Text="No phone found. Connect one over USB, or pair it for wireless debugging, then it'll show up here."
                            Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap"
