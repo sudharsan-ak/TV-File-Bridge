@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -302,14 +303,21 @@ private fun CompactDPadBlock(viewModel: RemoteViewModel) {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                RemoteIconButton(icon = Icons.Filled.Home, contentDescription = "Home", size = 40.dp) {
-                    viewModel.sendKeyEvent(AndroidKeyCode.HOME)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    RemoteIconButton(icon = Icons.Filled.Home, contentDescription = "Home", size = 40.dp) {
+                        viewModel.sendKeyEvent(AndroidKeyCode.HOME)
+                    }
+                    RemoteIconButton(icon = Icons.Filled.PowerSettingsNew, contentDescription = "Power", size = 40.dp) {
+                        viewModel.sendKeyEvent(AndroidKeyCode.POWER)
+                    }
                 }
-                RemoteIconButton(icon = Icons.Filled.PowerSettingsNew, contentDescription = "Power", size = 40.dp) {
-                    viewModel.sendKeyEvent(AndroidKeyCode.POWER)
-                }
-                RemoteIconButton(icon = Icons.Filled.Settings, contentDescription = "TV settings", size = 40.dp) {
-                    viewModel.openTvSettings()
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    RemoteIconButton(icon = Icons.Filled.Settings, contentDescription = "TV settings", size = 40.dp) {
+                        viewModel.openTvSettings()
+                    }
+                    RemoteIconButton(icon = Icons.Filled.Tune, contentDescription = "Quick settings", size = 40.dp) {
+                        viewModel.sendKeyEvent(AndroidKeyCode.QUICK_SETTINGS)
+                    }
                 }
             }
 
