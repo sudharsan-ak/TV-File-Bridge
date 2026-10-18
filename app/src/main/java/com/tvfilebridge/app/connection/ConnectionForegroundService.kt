@@ -35,9 +35,15 @@ private const val CHANNEL_ID = "connection_hold"
  * AppContainer itself, not here - it needs to run whenever the app process
  * is alive at all, not only while this service is (this service is strictly
  * a subset of "process alive": it only runs when the user has separately
- * opted into the Quick Settings tile). This service's notification text
- * still reflects that the listener is active, since in practice it's
- * running for as long as this service is.
+ * opted into the Quick Settings tile). Started here or not, the receiver
+ * lives in this same process, so the OS's "do not suspend a foreground
+ * service" guarantee this service holds protects that receiver too for as
+ * long as this service is running - without the tile on, the receiver is
+ * best-effort only, and the OS can suspend the process (and the listener
+ * with it) in the background, which is why a PC -> phone push can
+ * sometimes silently fail until the user reopens the app. This service's
+ * notification text still reflects that the listener is active, since in
+ * practice it's running for as long as this service is.
  */
 class ConnectionForegroundService : Service() {
 

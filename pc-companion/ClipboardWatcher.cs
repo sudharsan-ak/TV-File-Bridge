@@ -323,6 +323,40 @@ public class ClipboardWatcher : IDisposable
         }
     }
 
+    /// <summary>
+    /// ClipboardReceiverServer (the phone's listener for this direction) is
+    /// only best-effort when the "TV Connection" Quick Settings tile is off -
+    /// Android can suspend the app process (and the listener with it) in the
+    /// background, and the phone has no way to tell this PC "wake me up"
+    /// before a push arrives. A single failed connect attempt used to mean
+    /// the whole push silently failed until the user manually reopened the
+    /// app (which revives the process and restarts the listener). Retrying
+    /// a few times with a short backoff covers the common case - the phone
+    /// waking from Doze within a few seconds of the connection attempt -
+    /// without needing any phone-side change or a new persistent notification.
+    /// </summary>
+    private static async Task<TcpClient> ConnectWithRetryAsync(string host, int port, CancellationToken cancellationToken = default)
+    {
+        var delaysMs = new[] { 0, 1500, 3000 };
+        Exception? lastException = null;
+        foreach (var delayMs in delaysMs)
+        {
+            if (delayMs > 0) await Task.Delay(delayMs, cancellationToken);
+            var client = new TcpClient();
+            try
+            {
+                await client.ConnectAsync(host, port, cancellationToken);
+                return client;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                client.Dispose();
+            }
+        }
+        throw lastException!;
+    }
+
     private static async Task<bool> ReadExactAsync(NetworkStream stream, byte[] buffer)
     {
         var offset = 0;
@@ -339,8 +373,7 @@ public class ClipboardWatcher : IDisposable
     {
         try
         {
-            using var client = new TcpClient();
-            await client.ConnectAsync(device.IpAddress, PhoneReceiverPort);
+            using var client = await ConnectWithRetryAsync(device.IpAddress, PhoneReceiverPort);
             var stream = client.GetStream();
 
             var header = JsonSerializer.Serialize(new { type = "text", deviceName = _settingsStore.Settings.DeviceName, text });
@@ -367,8 +400,7 @@ public class ClipboardWatcher : IDisposable
     {
         try
         {
-            using var client = new TcpClient();
-            await client.ConnectAsync(device.IpAddress, PhoneReceiverPort);
+            using var client = await ConnectWithRetryAsync(device.IpAddress, PhoneReceiverPort);
             var stream = client.GetStream();
 
             var header = JsonSerializer.Serialize(new
@@ -413,8 +445,7 @@ public class ClipboardWatcher : IDisposable
 
         try
         {
-            using var client = new TcpClient();
-            await client.ConnectAsync(device.IpAddress, PhoneReceiverPort, cancellationToken);
+            using var client = await ConnectWithRetryAsync(device.IpAddress, PhoneReceiverPort, cancellationToken);
             var stream = client.GetStream();
 
             var header = JsonSerializer.Serialize(new
@@ -505,8 +536,7 @@ public class ClipboardWatcher : IDisposable
 
         try
         {
-            using var client = new TcpClient();
-            await client.ConnectAsync(device.IpAddress, PhoneReceiverPort, cancellationToken);
+            using var client = await ConnectWithRetryAsync(device.IpAddress, PhoneReceiverPort, cancellationToken);
             var stream = client.GetStream();
 
             var startHeader = JsonSerializer.Serialize(new
