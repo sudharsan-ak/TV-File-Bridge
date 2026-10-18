@@ -431,6 +431,63 @@ public class ClipboardWatcher : IDisposable
     private const int FileStreamChunkSize = 64 * 1024;
 
     /// <summary>
+    /// Pushes an APK to a paired phone over this same clipboard-bridge
+    /// protocol instead of ADB - used by Install APK's phone target so a
+    /// sideload doesn't depend on wireless debugging staying connected
+    /// (it drops on phone sleep and needs a fresh pairing code to
+    /// reconnect, unlike this protocol's self-healing IP resolver on the
+    /// phone side). ClipboardReceiverServer's "install-apk" handler saves
+    /// the file exactly like a normal "file" push, then launches Android's
+    /// package installer on it directly - the user still sees the normal
+    /// install confirmation screen on their phone.
+    /// </summary>
+    public async Task<Result<Unit>> PushApkAsync(PairedDevice device, string filePath, Action<double>? onProgress = null, CancellationToken cancellationToken = default)
+    {
+        var fileName = Path.GetFileName(filePath);
+        var fileLength = new FileInfo(filePath).Length;
+
+        try
+        {
+            using var client = await ConnectWithRetryAsync(device.IpAddress, PhoneReceiverPort, cancellationToken);
+            var stream = client.GetStream();
+
+            var header = JsonSerializer.Serialize(new
+            {
+                type = "install-apk",
+                deviceName = _settingsStore.Settings.DeviceName,
+                fileName,
+                fileByteLength = fileLength,
+            });
+            await WriteFramedAsync(stream, header);
+
+            await using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            {
+                var buffer = new byte[FileStreamChunkSize];
+                long sent = 0;
+                int read;
+                while ((read = await fileStream.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    await stream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    sent += read;
+                    onProgress?.Invoke(fileLength > 0 ? (double)sent / fileLength * 100 : 100);
+                }
+            }
+            await stream.FlushAsync(cancellationToken);
+            Console.WriteLine($"[ClipboardWatcher] APK push succeeded: {fileName}");
+            return Result<Unit>.Success(Unit.Value);
+        }
+        catch (OperationCanceledException)
+        {
+            return Result<Unit>.Failure("Cancelled");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClipboardWatcher] APK push failed: {ex.Message}");
+            return Result<Unit>.Failure(ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Streams the file straight from disk in fixed-size chunks instead of
     /// loading it into a byte[] first - files pushed this way aren't capped
     /// in size (could be a multi-GB video copied in Explorer), so this keeps

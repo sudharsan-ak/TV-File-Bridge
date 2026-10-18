@@ -1145,13 +1145,13 @@
 
             <StackPanel Visibility="{Binding IsApkTargetPhone, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12">
                 <TextBlock Text="Phone" FontSize="11" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,4"
-                           Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}}"/>
-                <ComboBox ItemsSource="{Binding ApkTargetPhones}" SelectedItem="{Binding SelectedApkTargetPhone}"
-                          DisplayMemberPath="DisplayName" HorizontalAlignment="Left" MinWidth="260"
-                          Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}}"/>
-                <TextBlock Text="No phone found. Connect one over USB, or pair it for wireless debugging, then it'll show up here."
+                           Visibility="{Binding PairedDevices.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ComboBox ItemsSource="{Binding PairedDevices}" SelectedItem="{Binding SelectedInstallApkPhone}"
+                          DisplayMemberPath="DeviceName" HorizontalAlignment="Left" MinWidth="260"
+                          Visibility="{Binding PairedDevices.Count, Converter={StaticResource CountToVisibility}}"/>
+                <TextBlock Text="No paired phone found. Open the app on your phone and pair it from PC Sync first."
                            Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap"
-                           Visibility="{Binding ApkTargetPhones.Count, Converter={StaticResource CountToVisibility}, ConverterParameter=Invert}"/>
+                           Visibility="{Binding PairedDevices.Count, Converter={StaticResource CountToVisibility}, ConverterParameter=Invert}"/>
             </StackPanel>
 
             <StackPanel Visibility="{Binding IsTvConnectedForInstall, Converter={StaticResource InverseBoolVisibility}}">

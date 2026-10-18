@@ -1,14 +1,20 @@
 package com.tvfilebridge.app.clipboard
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,11 +34,13 @@ import java.nio.ByteOrder
 
 private const val TAG = "ClipboardReceiverServer"
 const val CLIPBOARD_RECEIVER_PORT = 58822
+private const val INSTALL_NOTIFICATION_CHANNEL_ID = "apk_install_ready"
+private const val INSTALL_NOTIFICATION_ID = 2001
 private const val STREAM_CHUNK_SIZE = 64 * 1024
 
 @Serializable
 private data class IncomingPushHeader(
-    val type: String, // "text", "image", "file", or "folder-start"/"folder-file"/"folder-end"
+    val type: String, // "text", "image", "file", "install-apk", or "folder-start"/"folder-file"/"folder-end"
     val deviceName: String = "",
     val text: String? = null,
     val imageByteLength: Int = 0,
@@ -203,6 +211,14 @@ class ClipboardReceiverServer(
                         status = ClipboardSendStatus.SUCCESS,
                     ),
                 )
+                return false
+            }
+            "install-apk" -> {
+                val fileName = header.fileName
+                if (fileName.isNullOrBlank() || header.fileByteLength <= 0) return false
+                val uri = receiveFileStreamed(input, fileName, header.fileByteLength, header.deviceName) ?: return false
+                Log.i(TAG, "received APK '$fileName' from ${header.deviceName}, launching installer")
+                launchPackageInstaller(uri, fileName)
                 return false
             }
             "folder-start" -> {
@@ -416,6 +432,64 @@ class ClipboardReceiverServer(
             Log.e(TAG, "failed to save incoming image: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Can't call startActivity() directly here to pop the install screen
+     * open the moment the APK arrives - Android has blocked a background
+     * app from launching an Activity like that since Android 10, regardless
+     * of FLAG_ACTIVITY_NEW_TASK or any manifest permission; it fails
+     * silently (no exception) unless the calling app currently owns the
+     * foreground window, which this background socket listener never does.
+     * Confirmed against this exact failure: a push logged "launching
+     * installer" with no error, yet nothing ever appeared on screen.
+     *
+     * The notification-tap pattern sidesteps this cleanly: tapping a
+     * notification counts as the user-initiated action Android requires
+     * before allowing a new Activity to come forward, so the PendingIntent
+     * below reliably opens the same install confirmation screen
+     * startActivity() couldn't show directly - one extra tap, but it works
+     * regardless of what the user is doing elsewhere on the phone at the
+     * moment the push arrives. This is also the general pattern Android
+     * itself recommends for this situation (see "Restrictions on starting
+     * activities from the background" in the platform docs).
+     */
+    private fun launchPackageInstaller(apkUri: Uri, fileName: String) {
+        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            INSTALL_NOTIFICATION_ID,
+            installIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        ensureInstallNotificationChannel()
+        val notification = NotificationCompat.Builder(context, INSTALL_NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Update ready to install")
+            .setContentText("$fileName was sent from your PC - tap to install")
+            // Same built-in system icon as ConnectionForegroundService -
+            // inflating our own vector drawable through the resource-ID
+            // Drawable/Icon paths throws a platform bug on this device.
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        context.getSystemService(NotificationManager::class.java).notify(INSTALL_NOTIFICATION_ID, notification)
+    }
+
+    private fun ensureInstallNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            INSTALL_NOTIFICATION_CHANNEL_ID,
+            "APK updates ready to install",
+            NotificationManager.IMPORTANCE_HIGH,
+        )
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun readExact(input: java.io.InputStream, buffer: ByteArray): Boolean {

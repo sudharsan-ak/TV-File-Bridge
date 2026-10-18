@@ -159,50 +159,33 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
             OnPropertyChanged(nameof(IsApkTargetTv));
             OnPropertyChanged(nameof(IsApkTargetPhone));
             OnPropertyChanged(nameof(ApkInstallTargetLabel));
-            if (value == ApkInstallTarget.Phone) _ = RefreshApkTargetPhonesAsync();
+            if (value == ApkInstallTarget.Phone) RefreshSelectedInstallApkPhone();
         }
     }
     public bool IsApkTargetTv => ApkTarget == ApkInstallTarget.Tv;
     public bool IsApkTargetPhone => ApkTarget == ApkInstallTarget.Phone;
 
-    public ObservableCollection<AdbDevice> ApkTargetPhones { get; } = new();
-
-    private AdbDevice? _selectedApkTargetPhone;
-    public AdbDevice? SelectedApkTargetPhone
+    // Install APK's phone target pushes over the same clipboard-bridge
+    // protocol as Copy-to-PC/PC-to-phone (self-healing IP, no ADB wireless
+    // debugging session to keep alive) - PairedDevices (already populated
+    // from SettingsStore by RefreshPairedDevices) is reused directly rather
+    // than keeping a second phone list in sync.
+    private PairedDevice? _selectedInstallApkPhone;
+    public PairedDevice? SelectedInstallApkPhone
     {
-        get => _selectedApkTargetPhone;
-        set { _selectedApkTargetPhone = value; OnPropertyChanged(nameof(SelectedApkTargetPhone)); OnPropertyChanged(nameof(ApkInstallTargetLabel)); }
+        get => _selectedInstallApkPhone;
+        set { _selectedInstallApkPhone = value; OnPropertyChanged(nameof(SelectedInstallApkPhone)); OnPropertyChanged(nameof(ApkInstallTargetLabel)); }
     }
 
-    /// <summary>
-    /// `adb devices -l` doesn't distinguish phones from TVs - a connected TV
-    /// shows up exactly like a phone would. This app already knows which
-    /// serials are TVs though: a TV's ADB serial is always "host:port", and
-    /// every TV this app has ever connected to is recorded in SavedTvs with
-    /// that same host/port, so anything matching one of those is filtered
-    /// out before it can appear in the phone picker.
-    /// </summary>
-    private int _apkTargetPhonesRefreshToken;
-
-    private async Task RefreshApkTargetPhonesAsync()
+    private void RefreshSelectedInstallApkPhone()
     {
-        // Each call gets its own token - if a newer refresh starts before an
-        // older one's `await` returns (e.g. the user clicking Phone twice in
-        // quick succession), the stale call's results are discarded instead
-        // of both writing into ApkTargetPhones and producing duplicate rows.
-        var token = ++_apkTargetPhonesRefreshToken;
-        var tvSerials = App.SettingsStore.Settings.SavedTvs.Select(tv => $"{tv.Host}:{tv.Port}").ToHashSet();
-        var devices = await AdbDeviceLister.ListAsync();
-        if (token != _apkTargetPhonesRefreshToken) return;
-
-        ApkTargetPhones.Clear();
-        foreach (var device in devices.Where(d => !tvSerials.Contains(d.Serial))) ApkTargetPhones.Add(device);
-        SelectedApkTargetPhone = ApkTargetPhones.FirstOrDefault();
+        if (SelectedInstallApkPhone != null && PairedDevices.Contains(SelectedInstallApkPhone)) return;
+        SelectedInstallApkPhone = PairedDevices.FirstOrDefault(d => d.IsPrimary) ?? PairedDevices.FirstOrDefault();
     }
 
     public string ApkInstallTargetLabel => ApkTarget == ApkInstallTarget.Tv
         ? $"📺 Installing to {App.TvAdbClient.ConnectedHost}"
-        : SelectedApkTargetPhone != null ? $"📱 Installing to {SelectedApkTargetPhone.DisplayName}" : "📱 No phone found";
+        : SelectedInstallApkPhone != null ? $"📱 Installing to {SelectedInstallApkPhone.DeviceName}" : "📱 No paired phone found";
 
     private int _apkInstalledCount;
     public int ApkInstalledCount
@@ -352,6 +335,7 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     {
         PairedDevices.Clear();
         foreach (var device in App.SettingsStore.Settings.PairedDevices) PairedDevices.Add(device);
+        RefreshSelectedInstallApkPhone();
     }
 
     private void RefreshSavedTvs()
@@ -724,22 +708,23 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>
-    /// Installs every queued APK strictly one at a time (adb install only
-    /// ever talks to one device serially anyway, so there's no throughput
-    /// lost by not parallelizing) - a failure on one item doesn't stop the
-    /// rest of the queue, it's just marked Failed and the loop continues.
-    /// Branches on ApkTarget: TV goes through TvAdbClient's own ADB
-    /// connection (AdvancedSharpAdbClient, with real per-chunk upload
-    /// progress); Phone shells out to the raw adb binary against the picked
-    /// device's serial (PhoneAdbInstaller) since TvAdbClient's one
-    /// connection is already the TV's - only coarse "Installing…" progress
-    /// there, adb install's own stdout doesn't expose a percentage.
+    /// Installs every queued APK strictly one at a time - a failure on one
+    /// item doesn't stop the rest of the queue, it's just marked Failed and
+    /// the loop continues. Branches on ApkTarget: TV goes through
+    /// TvAdbClient's own ADB connection (AdvancedSharpAdbClient, with real
+    /// per-chunk upload progress); Phone pushes over the same clipboard-
+    /// bridge protocol as Copy-to-PC (ClipboardWatcher.PushApkAsync), not
+    /// ADB - ADB wireless debugging drops its session whenever the phone
+    /// sleeps and needs a fresh pairing code typed in by hand to reconnect,
+    /// which made "install an updated APK" unreliable for something that
+    /// should be routine. This protocol instead self-heals the phone's IP
+    /// the same way Copy-to-PC already does.
     /// </summary>
     private async void OnApkQueueInstallClick(object sender, RoutedEventArgs e)
     {
-        if (ApkTarget == ApkInstallTarget.Phone && SelectedApkTargetPhone == null)
+        if (ApkTarget == ApkInstallTarget.Phone && SelectedInstallApkPhone == null)
         {
-            AppDialog.ShowInfo("No phone found. Connect a phone over USB or paired wireless debugging first.", "Install APK");
+            AppDialog.ShowInfo("No paired phone found. Open the app on your phone and pair it from PC Sync first.", "Install APK");
             return;
         }
 
@@ -774,14 +759,21 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
             }
             else
             {
-                item.StatusText = "Installing on phone…";
-                result = await PhoneAdbInstaller.InstallAsync(SelectedApkTargetPhone!.Serial, item.LocalPath);
+                item.StatusText = "Sending to phone…";
+                result = await App.Watcher.PushApkAsync(SelectedInstallApkPhone!, item.LocalPath, progress =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        item.Progress = progress;
+                        item.StatusText = $"Sending to phone… {progress:0}%";
+                    });
+                });
             }
 
             if (result.IsSuccess)
             {
                 item.Status = ApkQueueItemStatus.Installed;
-                item.StatusText = "Installed";
+                item.StatusText = ApkTarget == ApkInstallTarget.Tv ? "Installed" : "Sent — check your phone to finish installing";
                 ApkInstalledCount++;
             }
             else

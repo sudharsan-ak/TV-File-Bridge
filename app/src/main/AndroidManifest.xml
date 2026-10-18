@@ -10,6 +10,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Lets this app launch the system package installer for an APK pushed
+         from PC Companion's "Install APK -> Phone" button over our own
+         transfer protocol, instead of requiring ADB wireless debugging
+         (which drops its session whenever the phone sleeps and needs a
+         fresh pairing code to reconnect - a real nuisance for something
+         as simple as installing an updated APK). The user still sees
+         Android's own "Install unknown apps" prompt the first time, same
+         as installing any APK from a browser download. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".TvFileBridgeApp"

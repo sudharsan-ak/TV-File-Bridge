@@ -46,6 +46,12 @@ public class PairedDevice
     // this PC's own clipboard-watcher pushes (PC -> phone direction), mirroring
     // the phone app's own "primary PC" concept for its Copy-to-PC direction.
     public bool IsPrimary { get; set; }
+
+    // WPF's themed ComboBox template falls back to ToString() for its
+    // collapsed-state display when no ItemTemplate is set (same fix as
+    // AdbDevice) - without this it would show "PcCompanion.PairedDevice"
+    // instead of the phone's name.
+    public override string ToString() => DeviceName;
 }
 
 /// <summary>One installed app returned by TvAdbClient.ListLaunchableAppsAsync, for the Remote tab's app launcher - not persisted, live-fetched each time.</summary>
