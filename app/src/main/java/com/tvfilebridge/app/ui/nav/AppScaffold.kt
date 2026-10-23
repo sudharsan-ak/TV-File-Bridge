@@ -14,7 +14,9 @@ import androidx.compose.material.icons.filled.ContentPaste
 import com.tvfilebridge.app.clipboard.PcConnectionResolver
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PowerOff
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Settings
@@ -176,34 +178,26 @@ fun AppScaffold(container: AppContainer) {
                 val activeDeviceId by container.deviceStore.activeDeviceId.collectAsState(initial = null)
                 val activeDevice = devices.find { it.id == activeDeviceId }
                 if (activeDevice != null) {
-                    var isWaking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                    var showPowerDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
                     var showPairingDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
                     NavigationDrawerItem(
-                        label = { Text(if (isWaking) "Waking…" else "Wake TV") },
+                        label = { Text("Power") },
                         icon = { Icon(Icons.Filled.PowerSettingsNew, contentDescription = null) },
                         selected = false,
-                        onClick = {
-                            isWaking = true
-                            drawerScope.launch {
-                                // Sony's IRCC-IP power-on, not generic Wake-on-LAN -
-                                // this TV's router/hardware combo doesn't honor plain
-                                // magic packets (confirmed via direct testing), but
-                                // "Remote start: Powered on by apps" keeps this SOAP
-                                // endpoint reachable even while fully asleep.
-                                container.sonyIrccWaker.wake(activeDevice.host)
-                                kotlinx.coroutines.delay(1500)
-                                isWaking = false
-                            }
-                        },
+                        onClick = { showPowerDialog = true },
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
-                    NavigationDrawerItem(
-                        label = { Text("Pair for Wake TV") },
-                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                        selected = false,
-                        onClick = { showPairingDialog = true },
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                    )
+                    if (showPowerDialog) {
+                        TvPowerDialog(
+                            host = activeDevice.host,
+                            sonyIrccWaker = container.sonyIrccWaker,
+                            onPair = {
+                                showPowerDialog = false
+                                showPairingDialog = true
+                            },
+                            onDismiss = { showPowerDialog = false },
+                        )
+                    }
                     if (showPairingDialog) {
                         SonyPairingDialog(
                             host = activeDevice.host,
@@ -477,6 +471,83 @@ fun AppScaffold(container: AppContainer) {
             }
         }
     }
+}
+
+/**
+ * Groups the TV's three lifecycle actions (Wake/Power off/Restart) behind
+ * one "Power" drawer entry instead of three separate rows - they're all
+ * Sony IP control calls sharing the same pairing/cookie, so putting them
+ * together also makes it obvious "Pair for Wake TV" (here renamed "Pair")
+ * covers all three, not just waking.
+ */
+@Composable
+private fun TvPowerDialog(
+    host: String,
+    sonyIrccWaker: com.tvfilebridge.app.remote.SonyIrccWaker,
+    onPair: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var statusText by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var isBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    fun run(label: String, action: suspend () -> Result<Unit>) {
+        isBusy = true
+        statusText = label
+        scope.launch {
+            val result = action()
+            statusText = if (result.isSuccess) "Done" else "Failed - try Pair first"
+            kotlinx.coroutines.delay(1200)
+            statusText = null
+            isBusy = false
+        }
+    }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("TV power") },
+        text = {
+            Column {
+                androidx.compose.material3.TextButton(
+                    enabled = !isBusy,
+                    onClick = { run("Waking…") { sonyIrccWaker.wake(host) } },
+                ) {
+                    Icon(Icons.Filled.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(20.dp))
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    Text("Wake TV")
+                }
+                androidx.compose.material3.TextButton(
+                    enabled = !isBusy,
+                    onClick = { run("Turning off…") { sonyIrccWaker.powerOff(host) } },
+                ) {
+                    Icon(Icons.Filled.PowerOff, contentDescription = null, modifier = Modifier.size(20.dp))
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    Text("Power off TV")
+                }
+                androidx.compose.material3.TextButton(
+                    enabled = !isBusy,
+                    onClick = { run("Restarting…") { sonyIrccWaker.restart(host) } },
+                ) {
+                    Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    Text("Restart TV")
+                }
+                androidx.compose.material3.TextButton(enabled = !isBusy, onClick = onPair) {
+                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(20.dp))
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    Text("Pair (required once)")
+                }
+                if (statusText != null) {
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                    Text(statusText!!, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
 }
 
 /**

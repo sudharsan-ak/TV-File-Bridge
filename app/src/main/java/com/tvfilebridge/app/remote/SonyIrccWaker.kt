@@ -123,6 +123,62 @@ class SonyIrccWaker(private val authStore: SonyAuthStore) {
             }
         }.onFailure { Log.e(TAG, "wake($host) failed: ${it.message}", it) }
     }
+
+    /**
+     * Powers the TV off via Sony's IP control (/sony/system setPowerStatus),
+     * the same registration/cookie as wake() - one registration authorizes
+     * every endpoint under /sony/, not just IRCC, so no separate pairing step is
+     * needed for this. Unlike the ADB Power keyevent (a toggle, and only
+     * reachable while ADB is actually connected), this is an explicit
+     * "turn off" command over the TV's own LAN IP, so it keeps working even
+     * if the ADB session has dropped.
+     */
+    suspend fun powerOff(host: String): Result<Unit> =
+        systemCommand(host, """{"method":"setPowerStatus","id":1,"params":[{"status":false}],"version":"1.0"}""")
+
+    /**
+     * Reboots the TV via Sony's IP control (/sony/system requestReboot) -
+     * there is no equivalent IRCC remote-button code for this (a physical
+     * Sony remote has no restart button either), and ADB has no clean
+     * reboot-the-TV command short of a raw shell `reboot`. This is the only
+     * real one-shot restart available to either app.
+     */
+    suspend fun restart(host: String): Result<Unit> =
+        systemCommand(host, """{"method":"requestReboot","id":1,"params":[],"version":"1.0"}""")
+
+    private suspend fun systemCommand(host: String, jsonBody: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cookie = authStore.cookie(host).first()
+            val url = URL("http://$host/sony/system")
+            val body = jsonBody.toByteArray(StandardCharsets.UTF_8)
+
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 5000
+                readTimeout = 5000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                if (cookie != null) setRequestProperty("Cookie", cookie)
+            }
+
+            connection.use {
+                OutputStreamWriter(it.outputStream, StandardCharsets.UTF_8).use { writer -> writer.write(String(body, StandardCharsets.UTF_8)) }
+                val responseCode = it.responseCode
+                Log.i(TAG, "Sony system command to $host -> HTTP $responseCode")
+                if (responseCode == 401 || responseCode == 403) {
+                    throw IllegalStateException("Not registered - pair with the TV first (HTTP $responseCode)")
+                }
+                if (responseCode !in 200..299) {
+                    throw IllegalStateException("TV responded with HTTP $responseCode")
+                }
+                // Sony reports some refusals as HTTP 200 with an "error" field in the body.
+                val responseText = it.inputStream.bufferedReader().readText()
+                if (responseText.contains("\"error\"")) {
+                    throw IllegalStateException("TV refused the command: $responseText")
+                }
+            }
+        }.onFailure { Log.e(TAG, "systemCommand($host) failed: ${it.message}", it) }
+    }
 }
 
 private fun <T> HttpURLConnection.use(block: (HttpURLConnection) -> T): T {

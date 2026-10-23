@@ -24,6 +24,7 @@ public partial class App : Application
     public PcTransferManager TransferManager { get; private set; } = null!;
     public TvAdbClient TvAdbClient { get; } = new();
     public TvCursorBridge TvCursorBridge { get; }
+    public SonyControl SonyControl { get; private set; } = null!;
     private TrayIconManager _trayIcon = null!;
 
     public App()
@@ -50,6 +51,7 @@ public partial class App : Application
         thread.Start();
 
         SettingsStore = new SettingsStore();
+        SonyControl = new SonyControl(SettingsStore);
         HistoryStore = new ClipboardHistoryStore(SettingsStore);
         TransferManager = new PcTransferManager();
         Server = new ClipboardServer(SettingsStore, HistoryStore, TransferManager, RequestPairingApproval);

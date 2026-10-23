@@ -362,6 +362,12 @@ public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyC
         RefreshSavedTvs();
     }
 
+    private void OnTvSectionPowerClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not SavedTv tv) return;
+        new TvPowerWindow(App.SonyControl, tv.Host).ShowDialog();
+    }
+
     private void OnTvSectionRenameClick(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not SavedTv tv) return;

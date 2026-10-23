@@ -604,6 +604,8 @@
                                             <Button Content="Reconnect" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
                                                     Click="OnTvSectionReconnectClick" Tag="{Binding}"
                                                     Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolVisibility}}"/>
+                                            <Button Content="Power" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
+                                                    Click="OnTvSectionPowerClick" Tag="{Binding}"/>
                                             <Button Content="Rename" Style="{StaticResource FlatButton}" Margin="0,0,6,0"
                                                     Click="OnTvSectionRenameClick" Tag="{Binding}"/>
                                             <Button Content="Forget" Style="{StaticResource FlatButton}"

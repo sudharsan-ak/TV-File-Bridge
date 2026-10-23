@@ -123,4 +123,11 @@ public class AppSettings
     // stable ID linking an ADB serial (USB ID or mDNS string) back to a
     // paired device's IP-based identity, especially after either is renamed.
     public Dictionary<string, string> ScreenViewPhoneNames { get; set; } = new();
+
+    // Session cookie from Sony IP control's actRegister handshake, keyed by
+    // TV host - same pairing/cookie as the phone app's own SonyAuthStore,
+    // but a completely separate registration (each client, PC or phone,
+    // pairs with the TV independently; "TV File Bridge" and this PC each
+    // get their own entry under the TV's Settings > Remote device settings).
+    public Dictionary<string, string> SonyAuthCookies { get; set; } = new();
 }
