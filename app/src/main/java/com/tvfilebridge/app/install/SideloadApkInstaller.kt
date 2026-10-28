@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import com.tvfilebridge.app.connection.AdbConnectionManager
+import com.tvfilebridge.app.files.ShellQuote
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -65,8 +66,8 @@ class SideloadApkInstaller(
 
         onProgress(Progress.Installing)
         val installResult = connectionManager.withDadb { dadb ->
-            val response = dadb.shell("pm install -r ${shellQuote(remotePath)}")
-            dadb.shell("rm -f ${shellQuote(remotePath)}")
+            val response = dadb.shell("pm install -r ${ShellQuote.quote(remotePath)}")
+            dadb.shell("rm -f ${ShellQuote.quote(remotePath)}")
             if (response.exitCode != 0 || response.output.contains("Failure")) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output }.ifBlank { "Install failed" })
             }
@@ -74,8 +75,6 @@ class SideloadApkInstaller(
         installResult.exceptionOrNull()?.let { Log.e(TAG, "install failed: ${it.message}", it) }
         return installResult
     }
-
-    private fun shellQuote(path: String): String = "'" + path.replace("'", "'\\''") + "'"
 
     private fun fileSizeFor(uri: Uri): Long {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->

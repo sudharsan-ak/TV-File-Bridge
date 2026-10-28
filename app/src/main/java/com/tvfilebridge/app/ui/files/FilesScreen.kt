@@ -566,8 +566,8 @@ private fun StorageInfoDialog(viewModel: FilesViewModel, onDismiss: () -> Unit) 
                     }
                 } else {
                     val info = storageInfo!!
-                    DetailRow("Used", "${expandSizeUnit(info.used)} of ${expandSizeUnit(info.total)} (${info.usedPercent})")
-                    DetailRow("Free", expandSizeUnit(info.available))
+                    DetailRow("Used", "${FileSizeFormat.expandSizeUnit(info.used)} of ${FileSizeFormat.expandSizeUnit(info.total)} (${info.usedPercent})")
+                    DetailRow("Free", FileSizeFormat.expandSizeUnit(info.available))
                 }
 
                 Text(
@@ -580,7 +580,7 @@ private fun StorageInfoDialog(viewModel: FilesViewModel, onDismiss: () -> Unit) 
                         Text(shortcut.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         val size = folderSizes[shortcut.path]
                         if (size != null) {
-                            Text(expandSizeUnit(size), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(FileSizeFormat.expandSizeUnit(size), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                         }
@@ -687,10 +687,10 @@ private fun FileDetailsDialog(entry: RemoteFile, onDismiss: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 DetailRow("Type", if (entry.isDirectory) "Folder" else fileTypeLabel(entry.name))
                 if (!entry.isDirectory) {
-                    DetailRow("Size", "${formatBytes(entry.sizeBytes)} (${entry.sizeBytes} bytes)")
+                    DetailRow("Size", "${FileSizeFormat.formatBytes(entry.sizeBytes)} (${entry.sizeBytes} bytes)")
                 }
                 DetailRow("Location", entry.path.substringBeforeLast('/').ifBlank { "/" })
-                DetailRow("Modified", formatFullDate(entry.modifiedAt))
+                DetailRow("Modified", FileSizeFormat.formatFullDate(entry.modifiedAt))
             }
         },
         confirmButton = {
@@ -929,9 +929,9 @@ private fun FileRow(
                 overflow = TextOverflow.Ellipsis,
             )
             val meta = if (entry.isDirectory) {
-                formatModifiedDate(entry.modifiedAt)
+                FileSizeFormat.formatModifiedDate(entry.modifiedAt)
             } else {
-                listOf(formatBytes(entry.sizeBytes), formatModifiedDate(entry.modifiedAt)).filter { it.isNotBlank() }.joinToString(" · ")
+                listOf(FileSizeFormat.formatBytes(entry.sizeBytes), FileSizeFormat.formatModifiedDate(entry.modifiedAt)).filter { it.isNotBlank() }.joinToString(" · ")
             }
             if (meta.isNotBlank()) {
                 Text(meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1484,11 +1484,11 @@ private fun PcFileRow(
             )
             val meta = if (isRoot) {
                 val total = entry.totalBytes
-                if (total != null) "${formatBytes(entry.sizeBytes)} free of ${formatBytes(total)}" else ""
+                if (total != null) "${FileSizeFormat.formatBytes(entry.sizeBytes)} free of ${FileSizeFormat.formatBytes(total)}" else ""
             } else if (entry.isDirectory) {
-                formatModifiedDate(entry.modifiedAt)
+                FileSizeFormat.formatModifiedDate(entry.modifiedAt)
             } else {
-                listOf(formatBytes(entry.sizeBytes), formatModifiedDate(entry.modifiedAt)).filter { it.isNotBlank() }.joinToString(" · ")
+                listOf(FileSizeFormat.formatBytes(entry.sizeBytes), FileSizeFormat.formatModifiedDate(entry.modifiedAt)).filter { it.isNotBlank() }.joinToString(" · ")
             }
             if (meta.isNotBlank()) {
                 Text(meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1563,7 +1563,7 @@ private fun PcFileGridCell(
             val total = entry.totalBytes
             if (total != null) {
                 Text(
-                    "${formatBytes(entry.sizeBytes)} free of ${formatBytes(total)}",
+                    "${FileSizeFormat.formatBytes(entry.sizeBytes)} free of ${FileSizeFormat.formatBytes(total)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

@@ -54,7 +54,7 @@ import com.tvfilebridge.app.clipboard.ReceivedFileTransferStatus
 import com.tvfilebridge.app.transfers.Transfer
 import com.tvfilebridge.app.transfers.TransferDirection
 import com.tvfilebridge.app.transfers.TransferStatus
-import com.tvfilebridge.app.ui.files.formatBytes
+import com.tvfilebridge.app.ui.files.FileSizeFormat.formatBytes
 
 @Composable
 fun TransfersScreen(

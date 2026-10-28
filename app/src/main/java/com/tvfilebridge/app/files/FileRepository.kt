@@ -3,9 +3,6 @@ package com.tvfilebridge.app.files
 import android.util.Log
 import com.tvfilebridge.app.connection.AdbConnectionManager
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
 
 private const val TAG = "FileRepository"
 
@@ -24,12 +21,12 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
             // /sdcard -> /storage/self/primary) rather than listing the link
             // itself as a single file entry.
             val listPath = if (path.endsWith("/")) path else "$path/"
-            val response = dadb.shell("ls -la ${shellQuote(listPath)}")
+            val response = dadb.shell("ls -la ${ShellQuote.quote(listPath)}")
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
             response.output.lineSequence()
-                .mapNotNull { parseLsLine(it, path) }
+                .mapNotNull { FileListParser.parseLsLine(it, path) }
                 .sortedWith(compareByDescending<RemoteFile> { it.isDirectory }.thenBy { it.name.lowercase() })
                 .toList()
         }
@@ -46,7 +43,7 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
         val result = connectionManager.withDadb { dadb ->
             val parent = path.substringBeforeLast('/', "")
             val newPath = if (parent.isEmpty()) newName else "$parent/$newName"
-            val response = dadb.shell("mv ${shellQuote(path)} ${shellQuote(newPath)}")
+            val response = dadb.shell("mv ${ShellQuote.quote(path)} ${ShellQuote.quote(newPath)}")
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
@@ -58,7 +55,7 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
 
     suspend fun delete(path: String): Result<Unit> {
         val result = connectionManager.withDadb { dadb ->
-            val response = dadb.shell("rm -rf ${shellQuote(path)}")
+            val response = dadb.shell("rm -rf ${ShellQuote.quote(path)}")
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
@@ -111,38 +108,25 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
             // -printf emits size, mtime (epoch seconds, may have fractional
             // part) and path in one pass, so results carry real size/mtime
             // without a second round trip per match.
-            val response = dadb.shell("find ${shellQuote(searchPath)} -type f $findExpr -printf '%s %T@ %p\\n'")
+            val response = dadb.shell("find ${ShellQuote.quote(searchPath)} -type f $findExpr -printf '%s %T@ %p\\n'")
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
             response.output.lineSequence()
                 .filter { it.isNotBlank() }
-                .mapNotNull { parseFindLine(it) }
+                .mapNotNull { FileListParser.parseFindLine(it) }
                 .toList()
         }
         result.exceptionOrNull()?.let { Log.e(TAG, "findFiles($rootPath) failed: ${it.message}", it) }
         return result
     }
 
-    private fun parseFindLine(line: String): RemoteFile? {
-        val parts = line.split(Regex("\\s+"), limit = 3)
-        if (parts.size < 3) return null
-        val size = parts[0].toLongOrNull() ?: 0L
-        val epochSeconds = parts[1].substringBefore('.').toLongOrNull()
-        val path = parts[2]
-        return RemoteFile(
-            name = path.substringAfterLast('/'),
-            path = path,
-            isDirectory = false,
-            sizeBytes = size,
-            modifiedAt = epochSeconds?.let { it * 1000 },
-        )
-    }
+    // parseFindLine moved to FileListParser.java (pure-logic Java port, no behavior change).
 
     /** Free/used/total space for the filesystem backing [path], via `df -h`. */
     suspend fun storageInfo(path: String): Result<StorageInfo> {
         val result = connectionManager.withDadb { dadb ->
-            val response = dadb.shell("df -h ${shellQuote(path)}")
+            val response = dadb.shell("df -h ${ShellQuote.quote(path)}")
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
@@ -160,7 +144,7 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
     suspend fun folderSize(path: String): Result<String> {
         val result = connectionManager.withDadb { dadb ->
             val listPath = if (path.endsWith("/")) path else "$path/"
-            val response = dadb.shell("du -sh ${shellQuote(listPath)} 2>/dev/null")
+            val response = dadb.shell("du -sh ${ShellQuote.quote(listPath)} 2>/dev/null")
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
@@ -173,48 +157,13 @@ class FileRepository(private val connectionManager: AdbConnectionManager) {
     /** Checks a remote path exists, for upload-conflict detection before pushing. */
     suspend fun exists(path: String): Result<Boolean> {
         val result = connectionManager.withDadb { dadb ->
-            val response = dadb.shell("[ -e ${shellQuote(path)} ] && echo yes || echo no")
+            val response = dadb.shell("[ -e ${ShellQuote.quote(path)} ] && echo yes || echo no")
             response.output.trim() == "yes"
         }
         result.exceptionOrNull()?.let { Log.e(TAG, "exists($path) failed: ${it.message}", it) }
         return result
     }
 
-    private fun shellQuote(path: String): String = "'" + path.replace("'", "'\\''") + "'"
-
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).apply {
-        timeZone = TimeZone.getDefault()
-    }
-
-    private fun parseLsLine(line: String, parentPath: String): RemoteFile? {
-        if (line.isBlank() || line.startsWith("total ")) return null
-
-        val parts = line.trimEnd().split(Regex("\\s+"), limit = 8)
-        if (parts.size < 8) return null
-
-        val perms = parts[0]
-        val sizeStr = parts[4]
-        val date = parts[5]
-        val time = parts[6]
-        var name = parts[7]
-
-        // Symlinks: "name -> target" - keep just the link name.
-        val arrowIndex = name.indexOf(" -> ")
-        if (arrowIndex >= 0) name = name.substring(0, arrowIndex)
-
-        if (name == "." || name == "..") return null
-
-        val isDirectory = perms.startsWith("d")
-        val size = sizeStr.toLongOrNull() ?: 0L
-        val modifiedAt = runCatching { dateFormat.parse("$date $time")?.time }.getOrNull()
-        val fullPath = if (parentPath.endsWith("/")) "$parentPath$name" else "$parentPath/$name"
-
-        return RemoteFile(
-            name = name,
-            path = fullPath,
-            isDirectory = isDirectory,
-            sizeBytes = size,
-            modifiedAt = modifiedAt,
-        )
-    }
+    // shellQuote moved to ShellQuote.java, parseLsLine to FileListParser.java
+    // (pure-logic Java ports, no behavior change).
 }

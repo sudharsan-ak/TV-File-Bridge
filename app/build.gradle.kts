@@ -59,6 +59,8 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation("junit:junit:4.13.2")
 }
 
 // Bundles the tv-companion APK as a raw asset so the phone app can push +

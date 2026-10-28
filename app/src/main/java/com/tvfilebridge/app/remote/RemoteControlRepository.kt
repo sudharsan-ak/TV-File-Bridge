@@ -96,7 +96,7 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
             }
             response.output.lineSequence()
                 .mapNotNull { line -> line.removePrefix("package:").trim().takeIf { it.isNotBlank() } }
-                .map { InstalledApp(packageName = it, label = guessLabel(it)) }
+                .map { InstalledApp(packageName = it, label = AppLabelGuesser.guessLabel(it)) }
                 .sortedBy { it.label.lowercase() }
                 .toList()
         }
@@ -118,7 +118,7 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
-            parseMacAddress(response.output, "wlan0") ?: parseMacAddress(response.output, "eth0")
+            NetworkInfoParser.parseMacAddress(response.output, "wlan0") ?: NetworkInfoParser.parseMacAddress(response.output, "eth0")
         }
         result.exceptionOrNull()?.let { Log.e(TAG, "fetchMacAddress failed: ${it.message}", it) }
         return result
@@ -173,7 +173,7 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
             if (response.exitCode != 0) {
                 throw IllegalStateException(response.errorOutput.ifBlank { response.output })
             }
-            parseNowPlaying(response.output)
+            NowPlayingParser.parse(response.output)
         }
         result.exceptionOrNull()?.let { Log.e(TAG, "fetchNowPlaying failed: ${it.message}", it) }
         return result
@@ -211,7 +211,7 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
      */
     suspend fun scrapeDurationFromScreen(): Result<ScrapedOverlayInfo?> {
         val result = connectionManager.withDadb { dadb ->
-            val wasPlayingBefore = parseNowPlaying(dadb.shell("dumpsys media_session").output)?.isPlaying
+            val wasPlayingBefore = NowPlayingParser.parse(dadb.shell("dumpsys media_session").output)?.isPlaying
             dadb.shell("input keyevent ${AndroidKeyCode.DPAD_CENTER}")
             kotlinx.coroutines.delay(200)
             // One dump serves the duration text, the seek bar's pixel
@@ -223,11 +223,11 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
             // actually on screen (dumpsys said "539K views" while this same
             // overlay showed "541K views" at that exact instant).
             val xml = dumpUiScreen(dadb)
-            val timePair = parseTimePairFromUiDump(xml)
-            val titleSubtitle = parseTitleSubtitleFromUiDump(xml)
-            parseSeekBarBoundsFromUiDump(xml)?.let { cachedSeekBarBounds = it }
+            val timePair = UiDumpParser.parseTimePair(xml)
+            val titleSubtitle = UiDumpParser.parseTitleSubtitle(xml)
+            UiDumpParser.parseSeekBarBounds(xml)?.let { cachedSeekBarBounds = it }
             if (wasPlayingBefore == true) {
-                val afterInfo = parseNowPlaying(dadb.shell("dumpsys media_session").output)
+                val afterInfo = NowPlayingParser.parse(dadb.shell("dumpsys media_session").output)
                 if (afterInfo?.isPaused == true) {
                     dadb.shell("input keyevent ${AndroidKeyCode.MEDIA_PLAY_PAUSE}")
                 }
@@ -319,7 +319,7 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
 
     private suspend fun dumpUiScreenAndParseTimePair(dadb: dadb.Dadb): Pair<Long, Long>? {
         val xml = dumpUiScreen(dadb)
-        val parsed = parseTimePairFromUiDump(xml)
+        val parsed = UiDumpParser.parseTimePair(xml)
         if (parsed == null) {
             Log.w(TAG, "dumpUiScreenAndParseTimePair: no time pair found, dump length=${xml.length}")
         }
@@ -328,7 +328,7 @@ class RemoteControlRepository(private val connectionManager: AdbConnectionManage
 
     private suspend fun dumpUiScreenAndParseSeekBarBounds(dadb: dadb.Dadb): SeekBarBounds? {
         val xml = dumpUiScreen(dadb)
-        val bounds = parseSeekBarBoundsFromUiDump(xml)
+        val bounds = UiDumpParser.parseSeekBarBounds(xml)
         if (bounds == null) {
             Log.w(TAG, "dumpUiScreenAndParseSeekBarBounds: no seek bar found, dump length=${xml.length}")
         }
@@ -395,210 +395,15 @@ data class NowPlayingInfo(
     val durationMs: Long?,
 )
 
-/**
- * Parses the top (most recently active) session out of `dumpsys
- * media_session`'s "Sessions Stack" block. Real sample line shapes this was
- * built against (captured live from a Sony Bravia):
- *   package=com.fox.foxone
- *   state=PlaybackState {state=3, position=-1, buffered position=-1, ...}
- *   metadata: null
- * state codes follow PlaybackState: 3=playing, 2=paused, 1=stopped, 6=buffering.
- * When metadata is present it looks like:
- *   metadata: size=3, description=..., mediaId=null, ...
- * but the exact metadata dump format varies enough across Android versions
- * that title/artist are pulled from the simpler `description=<title>, ...`
- * portion rather than a strict field-by-field parse.
- */
-private fun parseNowPlaying(dumpOutput: String): NowPlayingInfo? {
-    val lines = dumpOutput.lines()
-    val packageIndex = lines.indexOfFirst { it.trimStart().startsWith("package=") }
-    if (packageIndex == -1) return null
-    val packageName = lines[packageIndex].substringAfter("package=").trim().takeIf { it.isNotBlank() } ?: return null
-
-    val stateLine = lines.drop(packageIndex).firstOrNull { it.trimStart().startsWith("state=PlaybackState") } ?: return null
-    val stateCode = Regex("state=(\\d+)").find(stateLine)?.groupValues?.get(1)?.toIntOrNull()
-    val isPlaying = stateCode == 3
-    val isPaused = stateCode == 2
-    val position = Regex("position=(-?\\d+)").find(stateLine)?.groupValues?.get(1)?.toLongOrNull()?.takeIf { it >= 0 }
-
-    val metadataLine = lines.drop(packageIndex).firstOrNull { it.trimStart().startsWith("metadata:") }
-    var title: String? = null
-    var artist: String? = null
-    var duration: Long? = null
-    if (metadataLine != null && !metadataLine.contains("metadata: null")) {
-        // The "description=" field is actually MediaDescription's own
-        // toString(): "title, subtitle, description" comma-joined (there's
-        // no separate "subtitle=" key in this dump format - confirmed live
-        // against SmartTube: "description=Video Title, Channel • 538K
-        // views • Premiered..., null"). Split on the FIRST two commas only,
-        // since the subtitle/description text itself commonly contains
-        // commas (e.g. "538K views, premiered..."), which would otherwise
-        // truncate it.
-        val descriptionMatch = Regex("description=(.+)").find(metadataLine)?.groupValues?.get(1)
-        if (descriptionMatch != null) {
-            val parts = descriptionMatch.split(",", limit = 3)
-            title = parts.getOrNull(0)?.trim()?.takeIf { it.isNotBlank() && it != "null" }
-            artist = parts.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() && it != "null" }
-        }
-        duration = Regex("duration=(\\d+)").find(metadataLine)?.groupValues?.get(1)?.toLongOrNull()?.takeIf { it > 0 }
-    }
-
-    return NowPlayingInfo(
-        packageName = packageName,
-        appLabel = guessLabel(packageName),
-        title = title,
-        artist = artist,
-        isPlaying = isPlaying,
-        isPaused = isPaused,
-        positionMs = position,
-        durationMs = duration,
-    )
-}
-
-/**
- * Scans a `uiautomator dump` XML string for text nodes shaped like a
- * timestamp ("3:55", "1:23:45") and returns the first TWO as
- * (currentMs, totalMs) - generic across apps rather than matching a
- * specific app's resource-id (SmartTube's are current_time/total_time,
- * other apps use different ones), since the "current / total" pair
- * convention for a seek bar's time labels is near-universal even when the
- * exact view IDs aren't. Confirmed live against SmartTube's dump:
- * text="3:55" then text="/" then text="15:22", in that document order.
- */
-private fun parseTimePairFromUiDump(dumpXml: String): Pair<Long, Long>? {
-    val timePattern = Regex("""text="(\d{1,2}(?::\d{2}){1,2})"""")
-    val matches = timePattern.findAll(dumpXml).map { it.groupValues[1] }.toList()
-    if (matches.size < 2) return null
-    val current = parseTimestamp(matches[0]) ?: return null
-    val total = parseTimestamp(matches[1]) ?: return null
-    if (total <= current) return null
-    return current to total
-}
-
-private fun parseTimestamp(text: String): Long? {
-    val parts = text.split(":").mapNotNull { it.toIntOrNull() }
-    if (parts.isEmpty() || parts.size > 3) return null
-    var seconds = 0L
-    for (part in parts) seconds = seconds * 60 + part
-    return seconds * 1000
-}
-
 data class SeekBarBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
 
-/**
- * Finds the on-screen seek bar's real tappable pixel bounds in a
- * `uiautomator dump`. Generic across apps: rather than matching a specific
- * resource-id (SmartTube's is "playback_progress"), looks for any
- * clickable node whose class name contains "SeekBar" - confirmed live
- * against SmartTube: `class="...misc.SeekBar" clickable="true"
- * bounds="[112,842][1808,898]"`, and a direct `input tap` within those
- * bounds (mapped from a target fraction of the bar's width) reliably
- * jumped playback straight to that position - a real seek, not an
- * approximation via repeated fast-forward/rewind presses.
- */
-private fun parseSeekBarBoundsFromUiDump(dumpXml: String): SeekBarBounds? {
-    // Attribute order within a <node .../> tag isn't guaranteed, so match
-    // each whole node tag first, then pull class/clickable/bounds out of it
-    // independently rather than relying on one fixed attribute sequence.
-    val nodeTagPattern = Regex("""<node\b[^>]*/>""")
-    for (nodeMatch in nodeTagPattern.findAll(dumpXml)) {
-        val tag = nodeMatch.value
-        val isSeekBarClass = Regex("""class="[^"]*SeekBar[^"]*"""").containsMatchIn(tag)
-        val isClickable = tag.contains("""clickable="true"""")
-        if (!isSeekBarClass || !isClickable) continue
-        val boundsMatch = Regex("""bounds="\[(\d+),(\d+)]\[(\d+),(\d+)]"""").find(tag) ?: continue
-        val (left, top, right, bottom) = boundsMatch.destructured
-        return SeekBarBounds(left.toInt(), top.toInt(), right.toInt(), bottom.toInt())
-    }
-    return null
-}
-
-/**
- * Scrapes title/subtitle text directly from the on-screen overlay - a
- * DIFFERENT, fresher source than dumpsys media_session's metadata line.
- * Confirmed live: dumpsys reported "539K views" while the on-screen overlay
- * (captured in the exact same uiautomator dump used for duration/seek-bar
- * bounds) showed "541K views" at that same instant - SmartTube's own
- * session metadata publish lags behind what it actually renders. Generic
- * across apps: takes the first two substantial (>3 char, non-timestamp)
- * text nodes in document order, matching the title-then-subtitle layout
- * convention rather than a fixed resource-id.
- */
-private fun parseTitleSubtitleFromUiDump(dumpXml: String): Pair<String, String?>? {
-    val textPattern = Regex("""text="([^"]+)"""")
-    val timestampPattern = Regex("""^\d{1,2}(?::\d{2}){1,2}$""")
-    val candidates = textPattern.findAll(dumpXml)
-        .map { unescapeXml(it.groupValues[1]) }
-        .filter { it.length > 3 && !timestampPattern.matches(it) && it != "Remaining" }
-        .toList()
-    val title = candidates.getOrNull(0) ?: return null
-    val subtitle = candidates.getOrNull(1)
-    return title to subtitle
-}
-
-/**
- * uiautomator dump writes plain XML, so any non-ASCII character in an
- * app's on-screen text (emoji like 👍/👎 in SmartTube's like/dislike
- * counts, confirmed live) comes through as a numeric character reference
- * ("&#128077;") rather than the literal glyph - decodes both numeric
- * (&#NNNN; / &#xHHHH;) and the standard named XML entities.
- */
-private fun unescapeXml(text: String): String {
-    return Regex("&#x([0-9a-fA-F]+);|&#(\\d+);|&(amp|lt|gt|quot|apos);").replace(text) { match ->
-        val (hex, dec, named) = match.destructured
-        when {
-            hex.isNotEmpty() -> String(Character.toChars(hex.toInt(16)))
-            dec.isNotEmpty() -> String(Character.toChars(dec.toInt()))
-            named == "amp" -> "&"
-            named == "lt" -> "<"
-            named == "gt" -> ">"
-            named == "quot" -> "\""
-            named == "apos" -> "'"
-            else -> match.value
-        }
-    }
-}
-
-/** Extracts the `link/ether XX:XX:XX:XX:XX:XX` MAC line that follows an interface's own header line (e.g. `13: wlan0: <...>`) in `ip addr show` output. */
-private fun parseMacAddress(ipAddrOutput: String, interfaceName: String): String? {
-    val lines = ipAddrOutput.lines()
-    val headerIndex = lines.indexOfFirst { it.trimStart().let { line -> line.contains(": $interfaceName:") || line.contains(": $interfaceName@") } }
-    if (headerIndex == -1) return null
-    for (i in (headerIndex + 1) until minOf(headerIndex + 4, lines.size)) {
-        val macMatch = Regex("link/ether ([0-9a-fA-F:]{17})").find(lines[i])
-        if (macMatch != null) return macMatch.groupValues[1].lowercase()
-    }
-    return null
-}
-
-/**
- * ADB shell has no clean way to read an app's compiled string-resource label
- * (that lives in resources.arsc, not something `pm`/`dumpsys` prints as text
- * without root/aapt on the TV) - so labels are best-effort, derived from the
- * package name. Good enough for a launcher grid; not meant to be exact.
- */
-private val KNOWN_SUFFIXES = listOf(
-    "livingroomplus", "androidtv", "android_tv", "androidtvunplugged",
-    "tvunplugged", "android", "tv", "app",
-)
-
-// Build-flavor/variant names some apps (commonly sideloaded ones, e.g.
-// SmartTube's "org.smarttube.stable") use as their actual LAST package
-// segment - naively taking substringAfterLast('.') on those produces a
-// meaningless label ("Stable") instead of the real app name, so those
-// segments are skipped in favor of the one before them.
-private val VARIANT_SEGMENTS = setOf("stable", "beta", "debug", "release", "free", "pro", "lite", "nightly", "dev")
-
-private fun guessLabel(packageName: String): String {
-    val segments = packageName.split(".")
-    val nameSegment = segments.lastOrNull { it.lowercase() !in VARIANT_SEGMENTS } ?: segments.last()
-    val cleaned = KNOWN_SUFFIXES.fold(nameSegment.lowercase()) { acc, suffix ->
-        if (acc.endsWith(suffix) && acc.length > suffix.length) acc.removeSuffix(suffix) else acc
-    }.ifBlank { nameSegment }
-    return cleaned
-        .replace(Regex("[_-]"), " ")
-        .split(" ")
-        .filter { it.isNotBlank() }
-        .joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
-        .ifBlank { packageName }
-}
+// The pure shell-output parsing this file used to do directly now lives in
+// four focused Java classes, same package, same behavior - split by concern
+// rather than one combined class, so each is easier to find and debug on
+// its own:
+//   NowPlayingParser  - dumpsys media_session -> NowPlayingInfo
+//   UiDumpParser      - uiautomator dump XML (time pair, seek bar bounds,
+//                       title/subtitle, XML entity decoding)
+//   AppLabelGuesser   - package name -> display label
+//   NetworkInfoParser - ip addr show -> MAC address
+// Moved as a standalone Java port (no functional change) rather than a refactor.

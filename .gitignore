@@ -33,3 +33,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local-only usage notes (not project documentation)
+Build-Test-Install-Steps.md
