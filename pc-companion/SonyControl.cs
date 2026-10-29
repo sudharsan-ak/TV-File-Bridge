@@ -97,7 +97,7 @@ public class SonyControl
             </s:Body>
             </s:Envelope>
             """;
-        return await PostAsync(host, "IRCC", soapBody, "text/xml; charset=UTF-8", "\"urn:schemas-sony-com:service:IRCC:1#X_SendIRCC\"");
+        return await PostAsync(host, "IRCC", soapBody, "text/xml", "\"urn:schemas-sony-com:service:IRCC:1#X_SendIRCC\"");
     }
 
     private async Task<SonyControlResult> SendSystemCommandAsync(string host, string jsonBody) =>
